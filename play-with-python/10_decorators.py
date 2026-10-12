@@ -1,5 +1,8 @@
 # Decorators: @ syntax for wrapping functions
 
+import time
+from functools import wraps
+
 
 # -----------------------------------------------------
 # 1. Simple decorator
@@ -42,3 +45,41 @@ def hello(name):
 
 
 hello("Nag")
+
+
+# -----------------------------------------------------
+# 3. Timing functions, and why to use @wraps
+# -----------------------------------------------------
+
+print(greet.__name__)  # "wrapper": log_call hid the real name
+
+
+def timer(func):
+    @wraps(func)  # copy func's name and docstring onto wrapper
+    def wrapper(*args, **kwargs):
+        start = time.perf_counter()
+        result = func(*args, **kwargs)
+        elapsed = time.perf_counter() - start
+        print(f"{func.__name__} took {elapsed:.4f}s")
+        return result
+    return wrapper
+
+
+@timer
+def slow_sum(n):
+    """Add up 0..n-1."""
+    return sum(range(n))
+
+
+print(slow_sum(1_000_000))
+print(slow_sum.__name__, "-", slow_sum.__doc__)  # kept, thanks to @wraps
+
+
+# Decorators stack: the one nearest the function is applied first
+@timer
+@log_call
+def work():
+    time.sleep(0.1)
+
+
+work()  # prints "wrapper took": log_call has no @wraps

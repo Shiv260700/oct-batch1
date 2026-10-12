@@ -1,4 +1,6 @@
-# Collections in depth: list, tuple, set, dict
+# Collections in depth: list, tuple, set, dict, and the collections module
+
+from collections import Counter, defaultdict, namedtuple
 
 # -----------------------------------------------------
 # 1. list
@@ -94,3 +96,44 @@ team = {
 }
 print(team["members"][1])     # Bob
 print(team["lead"]["years"])  # 5
+
+
+# -----------------------------------------------------
+# 6. Choosing the right data structure
+# -----------------------------------------------------
+
+# Need...                                  Use
+# ordered items you'll add/remove/change   list
+# fixed record that shouldn't change       tuple (or namedtuple / dataclass)
+# unique items, fast "is x in here?"       set
+# look up a value by a key                 dict
+
+emails = ["a@x.com", "b@x.com", "a@x.com"]
+print(len(set(emails)))         # 2 unique: set removes duplicates
+
+blocked = {"spam@x.com", "bot@x.com"}  # set: `in` is fast even with millions
+print("bot@x.com" in blocked)
+
+prices = {"apple": 1.0, "bread": 2.5}  # dict: find a price by name
+print(prices["bread"])
+
+
+# -----------------------------------------------------
+# 7. The collections module
+# -----------------------------------------------------
+
+# Counter: count things
+word_counts = Counter("a b a c b a".split())
+print(word_counts)                 # Counter({'a': 3, 'b': 2, 'c': 1})
+print(word_counts.most_common(1))  # [('a', 3)]
+
+# defaultdict: missing keys get a default value automatically
+by_letter = defaultdict(list)
+for name in ["Alice", "Bob", "Anna", "Ben"]:
+    by_letter[name[0]].append(name)  # no need to check if the key exists
+print(dict(by_letter))  # {'A': ['Alice', 'Anna'], 'B': ['Bob', 'Ben']}
+
+# namedtuple: a tuple with named fields
+Point = namedtuple("Point", ["x", "y"])
+p = Point(3, 4)
+print(p.x, p.y, p)  # 3 4 Point(x=3, y=4)

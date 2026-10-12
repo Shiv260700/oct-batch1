@@ -24,8 +24,10 @@ greet()  # uses the default
 
 
 # -----------------------------------------------------
-# 3. Variable number of arguments (*args)
+# 3. Variable number of arguments (*args, **kwargs)
 # -----------------------------------------------------
+
+# *args collects extra positional arguments into a tuple
 
 def multiply(*args):
     result = 1
@@ -37,6 +39,25 @@ def multiply(*args):
 print(multiply(2, 3))
 print(multiply(2, 3, 4))
 print(multiply(2, 3, 4, 5, 6))
+
+
+# **kwargs collects extra keyword arguments into a dict
+def build_profile(name, **kwargs):
+    profile = {"name": name}
+    profile.update(kwargs)
+    return profile
+
+
+print(build_profile("Alice", age=30, city="Chennai"))
+
+
+# Both together: accept anything and pass it on
+def log_and_call(func, *args, **kwargs):
+    print(f"calling {func.__name__} with {args} {kwargs}")
+    return func(*args, **kwargs)  # * and ** unpack them again
+
+
+print(log_and_call(build_profile, "Bob", role="admin"))
 
 
 # -----------------------------------------------------

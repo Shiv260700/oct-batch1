@@ -117,3 +117,49 @@ p1 = Point(1, 2)
 p2 = Point(1, 2)
 print(p1)        # Point(x=1, y=2)
 print(p1 == p2)  # True: compares values, not identity
+
+
+# -----------------------------------------------------
+# 6. __call__ and the PyTorch pattern
+# -----------------------------------------------------
+
+# PyTorch models subclass nn.Module: set up parts in __init__,
+# write the computation in forward(), then call the object like a function.
+# This mini version shows how that works.
+
+class Module:
+    def __call__(self, x):  # model(x) runs this
+        return self.forward(x)
+
+    def forward(self, x):
+        raise NotImplementedError("subclasses must define forward()")
+
+
+class Scale(Module):
+    def __init__(self, factor):
+        self.factor = factor
+
+    def forward(self, x):
+        return [value * self.factor for value in x]
+
+
+class AddBias(Module):
+    def __init__(self, bias):
+        self.bias = bias
+
+    def forward(self, x):
+        return [value + self.bias for value in x]
+
+
+class Sequential(Module):
+    def __init__(self, *layers):
+        self.layers = layers
+
+    def forward(self, x):
+        for layer in self.layers:
+            x = layer(x)  # each layer is callable
+        return x
+
+
+model = Sequential(Scale(2), AddBias(1))
+print(model([1, 2, 3]))  # [3, 5, 7]

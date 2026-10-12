@@ -1,6 +1,8 @@
 # Iterators and generators: producing values one at a time
 
+import sys
 from contextlib import contextmanager
+from pathlib import Path
 
 # -----------------------------------------------------
 # 1. What a for loop really does
@@ -84,3 +86,38 @@ def tag(name):
 
 with tag("p"):
     print("Hello inside a tag")
+
+
+# -----------------------------------------------------
+# 6. Processing a large file one line at a time
+# -----------------------------------------------------
+
+big_file = Path(__file__).parent / "output" / "readings.csv"
+big_file.parent.mkdir(exist_ok=True)
+
+with open(big_file, "w") as f:  # make a 200,000-line sample file
+    f.write("sensor,value\n")
+    for i in range(200_000):
+        f.write(f"s{i % 5},{i % 100}\n")
+
+
+def read_values(path):
+    with open(path) as f:
+        next(f)  # skip the header
+        for line in f:  # the file object is itself a lazy iterator
+            _, value = line.rstrip("\n").split(",")
+            yield int(value)
+
+
+def above(values, threshold):
+    return (v for v in values if v > threshold)
+
+
+# Only one line is in memory at any moment
+print(sum(above(read_values(big_file), 90)))
+
+# Compare memory: a full list vs a generator
+values_list = list(read_values(big_file))
+values_gen = read_values(big_file)
+print(f"list: {sys.getsizeof(values_list):,} bytes")
+print(f"generator: {sys.getsizeof(values_gen):,} bytes")

@@ -1,0 +1,16 @@
+id,date,account,type,category,amount
+T001,2026-10-01,ACC-1,credit,salary,50000.00
+T002,2026-10-02,ACC-1,debit,rent,15000.00
+T003,2026-10-03,ACC-1,debit,groceries,2350.50
+T004,2026-10-03,ACC-2,debit,travel,1200.00
+T005,2026-10-04,ACC-2,credit,refund,450.00
+T006,2026-10-05,ACC-1,debit,groceries,980.25
+T007,2026-13-05,ACC-1,debit,groceries,500.00
+T008,2026-10-06,ACC-2,debit,dining,,
+T009,2026-10-06,ACC-1,transfer,misc,300.00
+T010,2026-10-07,ACC-1,debit,dining,-75.00
+,2026-10-07,ACC-2,debit,dining,640.00
+T012,2026-10-08,ACC-2,debit,travel,8200.00
+T013,2026-10-09,ACC-1,debit,dining,1150.00
+T014,2026-10-10,ACC-2,credit,salary,42000.00
+T015,2026-10-11,ACC-1,debit,utilities,abc
