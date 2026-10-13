@@ -1,1 +1,16 @@
 https://nagcloudlab.notion.site/Exercise-3d05bab9bf8780949612e856befef8c0?source=copy_link
+
+
+docker volume create pg_data
+docker network create vote-bridge-network
+docker run -d --name db \
+ --network vote-bridge-network \
+ -e POSTGRES_PASSWORD=postgress \
+ -e POSTGRES_HOST_AUTH_METHOD=trust \
+ -v pg_data:/var/lib/postgresql/data \
+ postgres:15
+docker run -d --name redis --network vote-bridge-network  redis:alpine 
+docker run -d --name worker --network vote-bridge-network docker/example-voting-app-worker
+docker run -d --name vote -p 8080:80 --network vote-bridge-network docker/example-voting-app-vote
+docker run -d --name result -p 8081:80 --network vote-bridge-network docker/example-voting-app-result
+
