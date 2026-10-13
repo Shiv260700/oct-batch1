@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab 00 · Setup and the Big Picture</title>
+<link rel="stylesheet" href="assets/deck.css">
+<style>
+  .level { display: grid; grid-template-columns: 210px 1fr 1fr; gap: 0; }
+  .level > div { padding: 12px 16px; border-bottom: 1px solid var(--line); font-size: 23px; }
+  .level .h { font-size: 15px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); border-bottom: 2px solid var(--line); }
+  .nest { border: 3px solid var(--blue); border-radius: 16px; padding: 14px 18px; background: var(--blue-soft); }
+  .nest .nest { border-color: var(--green); background: var(--green-soft); margin-top: 10px; }
+  .nest .nest .nest { border-color: var(--amber); background: var(--amber-soft); }
+  .nest .nest .nest .nest { border-color: var(--violet); background: var(--violet-soft); }
+  .nest b { font-size: 20px; }
+  .er { display: grid; grid-template-columns: 1fr 1.3fr 1fr; gap: 26px; align-items: center; }
+  .tbl { border: 2px solid var(--line); border-radius: 12px; overflow: hidden; background: #fff; }
+  .tbl .tn { background: var(--ink); color: #fff; font-weight: 800; padding: 10px 14px; font-size: 21px; }
+  .tbl .tn small { font-weight: 500; color: #b9c6dc; font-size: 15px; margin-left: 6px; }
+  .tbl div.c { padding: 6px 14px; font-family: var(--mono); font-size: 17px; border-top: 1px solid var(--line); }
+  .tbl div.c.k { background: var(--amber-soft); font-weight: 700; }
+</style>
+</head>
+<body data-deck="Lab 00 · Setup and the Big Picture">
+<div class="deck">
+
+<section class="slide title">
+  <div class="body">
+    <p class="kicker">SQL Performance Workshop · Lab 00</p>
+    <h1>Setup and<br>the Big Picture</h1>
+    <p class="lead">Get PostgreSQL running, load 1 million payments, and learn <b>where rows actually live</b>.</p>
+  </div>
+  <aside class="notes-src"><p>Goal: everyone ends this lab with identical data and the same mental model: pages, heap, index.</p></aside>
+</section>
+
+<section class="slide">
+  <p class="kicker">The workshop</p>
+  <h2>One question, six labs</h2>
+  <div class="body">
+    <p class="lead">"Why is this query slow, and how do I make it fast <b>without changing the answer</b>?"</p>
+    <div class="gap"></div>
+    <div class="cols c3">
+      <div class="card blue"><span class="label">Lab 01</span><p>Read an execution plan</p></div>
+      <div class="card blue"><span class="label">Lab 02</span><p>Design the right index</p></div>
+      <div class="card blue"><span class="label">Lab 03</span><p>Make joins fast</p></div>
+      <div class="card green"><span class="label">Lab 04</span><p>Rewrite queries</p></div>
+      <div class="card green"><span class="label">Lab 05</span><p>Capstone: the slow dashboard</p></div>
+      <div class="card green"><span class="label">Lab 06</span><p>Functions &amp; procedures</p></div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Every lab uses the same data and the same story customer, u1000@bank, so there is no new setup per lab.</p></aside>
+</section>
+
+<section class="slide">
+  <p class="kicker">How each lab works</p>
+  <h2>Five steps, every time</h2>
+  <div class="body">
+    <div class="flow">
+      <div class="box"><b>❓ Question</b>what do we want?</div><div class="arrow">→</div>
+      <div class="box amber"><b>🤔 Predict</b>write your guess</div><div class="arrow">→</div>
+      <div class="box blue"><b>▶️ Run</b>the SQL file</div><div class="arrow">→</div>
+      <div class="box"><b>👀 See</b>real output</div><div class="arrow">→</div>
+      <div class="box green"><b>📌 Remember</b>one rule</div>
+    </div>
+    <div class="gap"></div><div class="gap"></div>
+    <div class="tip step">Predicting first feels slow. It is the step that makes the lesson stick.</div>
+  </div>
+</section>
+
+<section class="slide section">
+  <div class="body">
+    <p class="kicker">Part 1</p>
+    <h2>The big picture</h2>
+    <p class="lead">Read this before typing anything</p>
+  </div>
+</section>
+
+<section class="slide">
+  <p class="kicker">How PostgreSQL is organised</p>
+  <h2>Server → database → schema → table</h2>
+  <div class="body cols wide-right">
+    <div class="nest">
+      <b>Server</b> · Docker, port 5432
+      <div class="nest"><b>Database</b> · paylab
+        <div class="nest"><b>Schema</b> · public
+          <div class="nest"><b>Tables</b> · accounts, merchants, transactions</div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="analogy"><div class="icon">🏦</div><p>Server = the <b>bank building</b><br>Database = a <b>records room</b><br>Schema = a <b>cupboard</b><br>Table = a <b>register</b></p></div>
+      <div class="gap"></div>
+      <div class="card step"><span class="label">Role</span><p><code>labuser</code> = your <b>staff ID card</b>: it decides which doors open.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <p class="kicker">Where rows live</p>
+  <h2>Tables are stored in 8 KB pages</h2>
+  <div class="body cols">
+    <div>
+      <ul>
+        <li>Rows are packed into <b>pages</b> of 8 KB</li>
+        <li><code>transactions</code>: ~<b>79 rows</b> per page</li>
+        <li>1,000,000 rows → <b class="blue">12,606 pages</b></li>
+        <li>PostgreSQL reads <b>whole pages</b></li>
+        <li>This area is the <b>heap</b>: no special order</li>
+      </ul>
+    </div>
+    <div>
+      <div class="pages">
+        <div class="pg">1</div><div class="pg">2</div><div class="pg">3</div><div class="pg">4</div><div class="pg">5</div>
+        <div class="pg">6</div><div class="pg">7</div><div class="pg">8</div><div class="pg">9</div><div class="pg">10</div>
+        <div class="pg">…</div><div class="pg">…</div><div class="pg">…</div><div class="pg">…</div><div class="pg">12606</div>
+      </div>
+      <div class="gap"></div>
+      <div class="rule step">Speed is mostly about <b>how many pages</b> are read.</div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>This is the most important idea in the workshop. Every optimisation later is a way to read fewer pages.</p></aside>
+</section>
+
+<section class="slide">
+  <p class="kicker">What an index is</p>
+  <h2>The index at the back of a book</h2>
+  <div class="body cols">
+    <div class="card red"><span class="label">No index</span><h3>Read every page</h3><p>To find "UPI", flip through all 500 pages.</p><p><b>Sequential Scan</b></p></div>
+    <div class="card green"><span class="label">Index</span><h3>"UPI → page 212"</h3><p>Look it up at the back, open one page.</p><p><b>Index Scan</b></p></div>
+  </div>
+  <aside class="notes-src"><p>An index is a separate, sorted structure: value plus row location. It costs space and must be updated on every insert. Lab 02 covers that cost.</p></aside>
+</section>
+
+<section class="slide section">
+  <div class="body">
+    <p class="kicker">Part 2</p>
+    <h2>Start PostgreSQL and load the data</h2>
+    <p class="lead">Parts 2–4 in the lab guide</p>
+  </div>
+</section>
+
+<section class="slide">
+  <p class="kicker">Start the server (choose one)</p>
+  <h2>Docker Compose is the easiest</h2>
+  <div class="body cols wide-left">
+    <pre class="sm">cd sql-advanced
+docker compose up -d
+docker logs advanced-sql-pg --tail 5
+<span class="com"># look for: ready to accept connections</span></pre>
+    <div>
+      <div class="card"><span class="label">Other options</span><p><code>docker run …</code> (see guide)</p><p>PostgreSQL already installed (15+)</p></div>
+      <div class="gap"></div>
+      <div class="tip">The course folder is mounted inside the container at <code>/workshop</code>, so you don't need <code>psql</code> on your laptop.</div>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <p class="kicker">Create your login and database</p>
+  <h2>As the admin user, once</h2>
+  <div class="body">
+    <pre class="sql">psql -h localhost -U postgres -d postgres
+
+CREATE ROLE labuser WITH LOGIN PASSWORD 'LabOnly_ChangeMe123';
+CREATE DATABASE paylab OWNER labuser;
+\q</pre>
+    <div class="gap"></div>
+    <div class="warn step">Run <code>CREATE DATABASE</code> on its own. It cannot run inside <code>BEGIN … COMMIT</code>.</div>
+  </div>
+</section>
+
+<section class="slide">
+  <p class="kicker">Load the data</p>
+  <h2>Always start <code>psql</code> in the course folder</h2>
+  <div class="body">
+    <pre class="sql">cd sql-advanced
+psql -h localhost -U labuser -d paylab
+<span class="com">-- or: docker exec -it -w /workshop advanced-sql-pg psql -U labuser -d paylab</span>
+
+\i sql/00_setup.sql</pre>
+    <div class="gap"></div>
+    <p class="step">Builds 3 tables in a few seconds. Same seed → <b>identical data on every laptop</b>.</p>
+  </div>
+  <aside class="notes-src"><p>The most common error: "sql/00_setup.sql: No such file". It means psql was started from another folder.</p></aside>
+</section>
+
+<section class="slide">
+  <p class="kicker">Checkpoint</p>
+  <h2>Your numbers must match</h2>
+  <div class="body">
+    <table>
+      <tr><th>Check</th><th>Expected</th></tr>
+      <tr><td>accounts / merchants / transactions</td><td><b>10,000 / 2,000 / 1,000,000</b></td></tr>
+      <tr><td>first / last payment</td><td><b>2026-01-01 / 2026-03-31</b></td></tr>
+      <tr><td>SUCCESS / FAILED / PENDING</td><td><b>941,023 / 48,998 / 9,979</b></td></tr>
+      <tr><td>indexes</td><td>only the 3 primary keys</td></tr>
+    </table>
+    <div class="gap"></div>
+    <div class="tip step">Different numbers? Raise your hand <b>now</b>, not in Lab 03.</div>
+  </div>
+</section>
+
+<section class="slide">
+  <p class="kicker">Meet the data</p>
+  <h2>Three tables, one story</h2>
+  <div class="body er">
+    <div class="tbl"><div class="tn">accounts <small>10,000</small></div>
+      <div class="c k">account_id</div><div class="c">holder_name</div><div class="c">segment</div><div class="c">city</div></div>
+    <div class="tbl"><div class="tn">transactions <small>1,000,000</small></div>
+      <div class="c k">txn_id</div><div class="c">payer_account →</div><div class="c">payee_account →</div><div class="c">amount</div><div class="c">status · channel</div><div class="c">txn_ts</div></div>
+    <div class="tbl"><div class="tn">merchants <small>2,000</small></div>
+      <div class="c k">merchant_account</div><div class="c">merchant_name</div><div class="c">category</div><div class="c">city</div></div>
+  </div>
+  <aside class="notes-src"><p>Payer = the customer who pays (accounts). Payee = the shop that gets paid (merchants). Our story customer is u1000@bank.</p></aside>
+</section>
+
+<section class="slide">
+  <p class="kicker">Meet the data</p>
+  <h2>What the values look like</h2>
+  <div class="body">
+    <table>
+      <tr><th>Column</th><th>Values</th></tr>
+      <tr><td><code>status</code></td><td>SUCCESS 94% · FAILED 5% · PENDING 1%</td></tr>
+      <tr><td><code>channel</code></td><td>APP 60% · UPI_QR 25% · WEB 15%</td></tr>
+      <tr><td><code>txn_ts</code></td><td>1 Jan 2026 → 31 Mar 2026</td></tr>
+      <tr><td><code>amount</code></td><td>₹1 → ₹49,021 (most are small)</td></tr>
+      <tr class="hl"><td>story customer</td><td><code>u1000@bank</code>: 103 payments</td></tr>
+    </table>
+  </div>
+</section>
+
+<section class="slide">
+  <p class="kicker">psql survival kit</p>
+  <h2>Six commands you need</h2>
+  <div class="body">
+    <table>
+      <tr><th>Command</th><th>What it does</th></tr>
+      <tr><td><code>\dt</code></td><td>List tables</td></tr>
+      <tr><td><code>\d transactions</code></td><td>Columns and indexes of a table</td></tr>
+      <tr><td><code>\x auto</code></td><td>Show wide rows vertically</td></tr>
+      <tr><td><code>\timing on</code></td><td>Show query time</td></tr>
+      <tr><td><code>\i sql/lab01.sql</code></td><td>Run a file</td></tr>
+      <tr><td><code>\q</code></td><td>Quit</td></tr>
+    </table>
+  </div>
+</section>
+
+<section class="slide">
+  <p class="kicker">Ready?</p>
+  <h2>Readiness checklist</h2>
+  <div class="body">
+    <ul>
+      <li>PostgreSQL running: <code>docker ps</code> shows <code>advanced-sql-pg</code></li>
+      <li>Connected as <code>labuser</code> to <code>paylab</code></li>
+      <li>Checkpoint numbers match</li>
+      <li><code>\d transactions</code> shows 1 index: <code>transactions_pkey</code></li>
+      <li>You can explain: <b>page</b>, <b>heap</b>, <b>index</b></li>
+    </ul>
+  </div>
+</section>
+
+<section class="slide title">
+  <div class="body">
+    <p class="kicker">Lab 00 · Done</p>
+    <h2 style="font-size:54px">Same data on every laptop.<br>Same picture in every head.</h2>
+    <div class="gap"></div>
+    <p class="lead"><b>Next: Lab 01</b>, Reading an Execution Plan.</p>
+  </div>
+</section>
+
+</div>
+<script src="assets/deck.js"></script>
+</body>
+</html>

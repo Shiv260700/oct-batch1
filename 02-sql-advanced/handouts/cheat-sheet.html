@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Performance Cheat Sheet</title>
+<style>
+  :root { --ink:#142033; --muted:#5a6880; --line:#d9e1ec; --soft:#f5f8fc; --blue:#1f5fd6; --green:#0d7a55; --red:#c23a2b; --amber:#a8620a; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #e9eef5; color: var(--ink); font-family: "Segoe UI", system-ui, -apple-system, sans-serif; font-size: 11.6px; line-height: 1.32; }
+  .page { width: 210mm; min-height: 297mm; margin: 16px auto; background: #fff; padding: 9mm 10mm 7mm; box-shadow: 0 6px 24px rgba(0,0,0,.08); }
+  header { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 3px solid var(--ink); padding-bottom: 5px; margin-bottom: 9px; }
+  header h1 { font-size: 21px; margin: 0; letter-spacing: -.01em; }
+  header span { color: var(--muted); font-size: 11.5px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 8mm; align-items: start; }
+  section { break-inside: avoid; margin-bottom: 9px; }
+  h2 { font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: #fff; background: var(--ink); padding: 3px 8px; border-radius: 4px; margin: 0 0 5px; }
+  h2.b { background: var(--blue); } h2.g { background: var(--green); } h2.a { background: var(--amber); } h2.r { background: var(--red); }
+  ol, ul { margin: 0 0 4px; padding-left: 17px; } li { margin-bottom: 2px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 3px; }
+  td, th { border-bottom: 1px solid var(--line); padding: 2.5px 4px; text-align: left; vertical-align: top; }
+  th { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11px; background: var(--soft); border: 1px solid var(--line); border-radius: 3px; padding: 0 3px; }
+  pre { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 10.5px; background: var(--soft); border: 1px solid var(--line); border-radius: 4px; padding: 5px 7px; margin: 3px 0; white-space: pre-wrap; }
+  .bad { color: var(--red); } .good { color: var(--green); }
+  .note { font-size: 11px; color: var(--muted); }
+  .box { border: 2px solid var(--green); border-radius: 6px; padding: 5px 8px; background: #eef8f3; }
+  @media print {
+    body { background: #fff; }
+    .page { margin: 0; box-shadow: none; width: auto; min-height: auto; page-break-after: always; }
+    @page { size: A4; margin: 0; }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+
+<div class="page">
+  <header><h1>SQL Performance Cheat Sheet · PostgreSQL</h1><span>Side 1 · Read the plan, choose the index</span></header>
+  <div class="grid"><div class="col">
+
+    <section>
+      <h2>Always measure like this</h2>
+      <pre>EXPLAIN (ANALYZE, BUFFERS) SELECT ...;</pre>
+      <ul>
+        <li><code>EXPLAIN</code> = plan only · <code>ANALYZE</code> = <b>really runs it</b></li>
+        <li>Data-changing SQL: <code>BEGIN; EXPLAIN ANALYZE UPDATE ...; ROLLBACK;</code></li>
+        <li>Run twice. Compare <b>pages (Buffers)</b>, not just ms</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2 class="b">Read any plan in 5 questions</h2>
+      <ol>
+        <li>Start at the <b>most indented</b> node; data flows <b>up</b></li>
+        <li>How is the table accessed: Seq Scan or an index?</li>
+        <li>How many rows thrown away? <code>Rows Removed by Filter</code></li>
+        <li>Estimate <code>rows=</code> close to <code>actual rows=</code>?</li>
+        <li>How many pages? <code>Buffers: shared hit / read</code></li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>Plan line fields</h2>
+      <table>
+        <tr><td><code>cost=a..b</code></td><td>Estimate in points (<b>not ms</b>): first row..all rows</td></tr>
+        <tr><td><code>rows=</code></td><td>Planner's guess of rows</td></tr>
+        <tr><td><code>actual time=a..b</code></td><td>Real ms: first row..last row</td></tr>
+        <tr><td><code>loops=N</code></td><td>Ran N times: <b>multiply rows by N</b></td></tr>
+        <tr><td><code>Index Cond</code></td><td class="good">Index did the search</td></tr>
+        <tr><td><code>Filter</code></td><td class="bad">Rows checked one by one</td></tr>
+        <tr><td><code>Heap Fetches</code></td><td>Index-only scan still visited the table</td></tr>
+        <tr><td><code>Batches &gt; 1</code>, <code>Disk</code></td><td class="bad">Ran out of <code>work_mem</code>, spilled to disk</td></tr>
+      </table>
+      <p class="note">Parent time includes child time: never add node times together.</p>
+    </section>
+
+    <section>
+      <h2>Plan nodes</h2>
+      <table>
+        <tr><th>Node</th><th>Means</th></tr>
+        <tr><td>Seq Scan</td><td>Read every page (fine when you need many rows)</td></tr>
+        <tr><td>Index Scan</td><td>Jump to rows via index (few rows)</td></tr>
+        <tr><td>Bitmap Index + Heap Scan</td><td>Collect locations, then read each page once</td></tr>
+        <tr><td>Index Only Scan</td><td>Answer from the index alone</td></tr>
+        <tr><td>Nested Loop</td><td>For each outer row, look up inner rows</td></tr>
+        <tr><td>Hash Join</td><td>Build a lookup table, probe it</td></tr>
+        <tr><td>Merge Join</td><td>Walk two sorted inputs together</td></tr>
+        <tr><td>HashAggregate / GroupAggregate</td><td>GROUP BY</td></tr>
+        <tr><td>Sort · Limit</td><td>ORDER BY · LIMIT</td></tr>
+        <tr><td>Gather (Merge)</td><td>Collect results from parallel workers</td></tr>
+        <tr><td>SubPlan</td><td>Subquery run per row: check <code>loops</code></td></tr>
+      </table>
+    </section>
+
+    </div><div class="col">
+    <section>
+      <h2 class="g">Will an index help?</h2>
+      <ul>
+        <li><b>Few rows</b> of many (e.g. 103 of 1,000,000) → yes</li>
+        <li><b>Most rows</b> (e.g. 94% SUCCESS) → Seq Scan wins; index ignored</li>
+        <li>An index the planner doesn't use is <b>pure cost</b></li>
+      </ul>
+    </section>
+
+    <section>
+      <h2 class="g">Which index?</h2>
+      <table>
+        <tr><th>Need</th><th>Index</th></tr>
+        <tr><td>Equality lookup</td><td><code>(payer_account)</code></td></tr>
+        <tr><td>Filter + ORDER BY + LIMIT</td><td><code>(payer_account, txn_ts DESC)</code></td></tr>
+        <tr><td>Only a small subset queried</td><td>Partial: <code>... WHERE status='FAILED'</code></td></tr>
+        <tr><td>Search on an expression</td><td><code>(lower(holder_name))</code></td></tr>
+        <tr><td>Avoid table visits</td><td>Covering: <code>... INCLUDE (amount)</code></td></tr>
+        <tr><td>Huge, time-ordered table</td><td><code>USING BRIN (txn_ts)</code></td></tr>
+      </table>
+      <div class="box"><b>Column order rule:</b> equality columns first → then range / ORDER BY column. Like a phone directory: sorted by surname, then first name.</div>
+    </section>
+
+    <section>
+      <h2 class="r">Keep the column bare (index-friendly)</h2>
+      <table>
+        <tr><th class="bad">Index can't help</th><th class="good">Index can help</th></tr>
+        <tr><td><code>txn_ts::date = '2026-03-15'</code></td><td><code>txn_ts &gt;= '2026-03-15' AND txn_ts &lt; '2026-03-16'</code></td></tr>
+        <tr><td><code>lower(name) = 'ravi'</code> (no expr index)</td><td>Expression index on <code>lower(name)</code></td></tr>
+        <tr><td><code>amount + 0 &gt; 100</code></td><td><code>amount &gt; 100</code></td></tr>
+      </table>
+    </section>
+
+    <section>
+      <h2 class="a">Indexes are not free</h2>
+      <ul>
+        <li>Every INSERT/UPDATE must update every index</li>
+        <li>Disk space: check <code>pg_relation_size('idx_name')</code></li>
+        <li>Unused? <code>pg_stat_user_indexes.idx_scan</code></li>
+      </ul>
+    </section>
+
+  </div></div>
+</div>
+
+<div class="page">
+  <header><h1>SQL Performance Cheat Sheet · PostgreSQL</h1><span>Side 2 · Joins, rewrites, functions</span></header>
+  <div class="grid"><div class="col">
+
+    <section>
+      <h2 class="b">Join algorithms</h2>
+      <table>
+        <tr><th>Join</th><th>Wins when</th><th>Watch</th></tr>
+        <tr><td>Nested Loop</td><td>Few outer rows + index on inner</td><td>Large <code>loops</code> without index</td></tr>
+        <tr><td>Hash Join</td><td>Big equality joins</td><td><code>Batches &gt; 1</code> (memory)</td></tr>
+        <tr><td>Merge Join</td><td>Both sides already sorted</td><td>Extra Sort nodes</td></tr>
+      </table>
+      <ul>
+        <li><b>Foreign keys are NOT indexed automatically.</b> Index the FK column you join or filter on</li>
+        <li>Inner joins: the planner chooses the join order, not you</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2 class="r">Correctness traps</h2>
+      <ul>
+        <li><code>NOT IN (subquery)</code> returns <b>nothing</b> if the subquery has a NULL → use <code>NOT EXISTS</code></li>
+        <li>LEFT JOIN + condition in <code>WHERE</code> on the right table = silently an INNER JOIN → put it in <code>ON</code></li>
+        <li><code>LIMIT</code> without <code>ORDER BY</code> = random rows</li>
+        <li>Pagination needs a <b>unique</b> tie-breaker: <code>ORDER BY txn_ts DESC, txn_id DESC</code></li>
+      </ul>
+    </section>
+
+    <section>
+      <h2 class="g">Rewrite patterns</h2>
+      <table>
+        <tr><th class="bad">Slow pattern</th><th class="good">Try</th></tr>
+        <tr><td>Subquery in SELECT per row (SubPlan, high loops)</td><td>GROUP BY once, then JOIN (or index the lookup)</td></tr>
+        <tr><td><code>JOIN</code> + <code>DISTINCT</code> to test existence</td><td><code>WHERE EXISTS (...)</code></td></tr>
+        <tr><td>Join 1M rows, then group</td><td>Group first, then join the small result</td></tr>
+        <tr><td><code>OFFSET 9000 LIMIT 20</code></td><td>Keyset: <code>WHERE (ts, id) &lt; (:last_ts, :last_id)</code></td></tr>
+        <tr><td>Latest row per group</td><td><code>DISTINCT ON</code> or <code>row_number()</code></td></tr>
+        <tr><td>CTE blocks a filter</td><td>Check <code>MATERIALIZED</code> / <code>NOT MATERIALIZED</code></td></tr>
+      </table>
+    </section>
+
+    </div><div class="col">
+    <section>
+      <h2 class="a">Wrong estimates?</h2>
+      <ul>
+        <li>Estimate far from actual (×10 or more) → the plan may be wrong</li>
+        <li>First: <code>ANALYZE table;</code> (refresh statistics)</li>
+        <li>Related columns (e.g. status &amp; channel):<br><code>CREATE STATISTICS s (mcv) ON status, channel FROM transactions;</code></li>
+        <li>Look: <code>SELECT * FROM pg_stats WHERE tablename = '...';</code></li>
+      </ul>
+    </section>
+
+    <section>
+      <h2 class="g">Prove the rewrite gives the same answer</h2>
+      <pre>SELECT count(*) FROM ((old_query) EXCEPT ALL (new_query)) d;  -- must be 0
+SELECT count(*) FROM ((new_query) EXCEPT ALL (old_query)) d;  -- must be 0</pre>
+      <p class="note">Faster but different answer = a bug, not an optimisation.</p>
+    </section>
+
+    <section>
+      <h2 class="b">Functions &amp; procedures</h2>
+      <ul>
+        <li><b>Set-based first:</b> one UPDATE beats a LOOP of 10,000 UPDATEs</li>
+        <li>Label volatility correctly: <code>IMMUTABLE</code> (same input → same output, no table reads), <code>STABLE</code> (reads tables), <code>VOLATILE</code> (default, changes data / random)</li>
+        <li>Only <code>IMMUTABLE</code> functions can be used in an index</li>
+        <li>Prefix parameters <code>p_</code> to avoid clashes with column names</li>
+        <li>Cached (generic) plans can suit one value and hurt another: compare plans for a rare and a busy value</li>
+        <li>Need <code>COMMIT</code> inside? Use a <code>PROCEDURE</code> + <code>CALL</code></li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>The tuning loop</h2>
+      <div class="box">
+        <b>1</b> Measure (plan, pages, ms) → <b>2</b> find the biggest waste → <b>3</b> change <b>one</b> thing → <b>4</b> measure again → <b>5</b> prove same answer
+      </div>
+    </section>
+
+    <section>
+      <h2>psql quick keys</h2>
+      <table>
+        <tr><td><code>\d table</code></td><td>Columns + indexes</td><td><code>\timing on</code></td><td>Show time</td></tr>
+        <tr><td><code>\di</code></td><td>List indexes</td><td><code>\x auto</code></td><td>Vertical rows</td></tr>
+        <tr><td><code>\i file.sql</code></td><td>Run a file</td><td><code>\df</code></td><td>List functions</td></tr>
+      </table>
+    </section>
+
+  </div></div>
+</div>
+
+</body>
+</html>

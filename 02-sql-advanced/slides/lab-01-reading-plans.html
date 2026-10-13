@@ -1,0 +1,710 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab 01 · Reading an Execution Plan</title>
+<link rel="stylesheet" href="assets/deck.css">
+<style>
+  .pgsim .row-label { font-size: 16px; font-weight: 700; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; margin: 10px 0 6px; }
+  .pgsim .idx { display: grid; grid-template-columns: repeat(3, 90px); gap: 8px; }
+  .pgsim .heap { grid-template-columns: repeat(20, 1fr); }
+  .pgsim .pg { height: 38px; }
+  .counter { font-family: var(--mono); font-size: 24px; font-weight: 700; }
+  .tree-num { display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--amber); color: #fff; font-weight: 800; font-size: 20px; margin-right: 10px; }
+  .funnel .box { text-align: center; margin: 0 auto; }
+  .worker { text-align: center; }
+  .worker .bar { height: 26px; border-radius: 6px; background: var(--blue-soft); border: 2px solid var(--blue); margin: 8px 0; }
+</style>
+</head>
+<body data-deck="Lab 01 · Reading an Execution Plan">
+<div class="deck">
+
+<!-- 1 -->
+<section class="slide title">
+  <div class="body">
+    <p class="kicker">SQL Performance Workshop · Lab 01</p>
+    <h1>Reading an<br>Execution Plan</h1>
+    <p class="lead">Before you fix a slow query, find out what PostgreSQL is <b>actually doing</b>.</p>
+  </div>
+  <aside class="notes-src"><p>Welcome. Today's single idea: never guess why SQL is slow. Ask PostgreSQL to show its plan, then read it.</p><p>Everyone should have finished Lab 00 (data loaded, checkpoint numbers matching).</p></aside>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <p class="kicker">The story</p>
+  <h2>"Show me my payments"</h2>
+  <div class="body cols wide-left">
+    <div>
+      <p>Customer <code>u1000@bank</code> calls support.</p>
+      <p>The support screen runs this query… and it is <b class="red">slow</b>.</p>
+      <pre class="sql">SELECT *
+FROM transactions
+WHERE payer_account = 'u1000@bank';</pre>
+    </div>
+    <div class="card amber step">
+      <span class="label">The numbers</span>
+      <div class="stat"><div class="num">1,000,000</div><div class="cap">payments in the table</div></div>
+      <div class="gap"></div>
+      <div class="stat"><div class="num amber">103</div><div class="cap">belong to u1000@bank</div></div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Ask: "How would YOU find 103 payments in a printed register of one million?" Collect answers: flip every page, or use an index at the back.</p><p>That is exactly the choice PostgreSQL makes.</p></aside>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <p class="kicker">Today</p>
+  <h2>Five skills for this lab</h2>
+  <div class="body">
+    <div class="cols c3">
+      <div class="card blue"><span class="label">1 · Ask</span><p>Show the plan with <code>EXPLAIN</code></p></div>
+      <div class="card blue"><span class="label">2 · Read</span><p>Understand every number on a plan line</p></div>
+      <div class="card blue"><span class="label">3 · Follow</span><p>Read a plan tree bottom-up</p></div>
+    </div>
+    <div class="gap"></div>
+    <div class="cols">
+      <div class="card green"><span class="label">4 · Recognise</span><p>Seq Scan vs Index Scan vs Bitmap Scan</p></div>
+      <div class="card green"><span class="label">5 · Measure</span><p>Prove the change in <b>pages</b> and <b>ms</b></p></div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Each step in the lab follows the same pattern: Question, Predict, Run, See, Remember. Insist on the Predict step. Writing a guess first is what makes it stick.</p></aside>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <p class="kicker">Big picture</p>
+  <h2>Rows live in 8 KB pages</h2>
+  <div class="body cols wide-right">
+    <div>
+      <ul>
+        <li>A table is stored as <b>pages</b> of 8 KB</li>
+        <li>Our table: <b>79 rows</b> per page</li>
+        <li>1,000,000 rows → <b class="blue">12,606 pages</b> (98 MB)</li>
+        <li>PostgreSQL reads <b>whole pages</b>, never single rows</li>
+      </ul>
+      <div class="rule step">Speed is mostly about <b>how many pages</b> are read.</div>
+    </div>
+    <div>
+      <div class="pages">
+        <div class="pg">1</div><div class="pg">2</div><div class="pg">3</div><div class="pg">4</div><div class="pg">5</div><div class="pg">6</div><div class="pg">7</div><div class="pg">8</div><div class="pg">9</div><div class="pg">10</div>
+        <div class="pg">11</div><div class="pg">12</div><div class="pg">13</div><div class="pg">14</div><div class="pg">15</div><div class="pg">16</div><div class="pg">17</div><div class="pg">18</div><div class="pg">19</div><div class="pg">20</div>
+        <div class="pg">21</div><div class="pg">22</div><div class="pg">23</div><div class="pg">24</div><div class="pg">25</div><div class="pg">26</div><div class="pg">27</div><div class="pg">28</div><div class="pg">29</div><div class="pg">30</div>
+        <div class="pg">…</div><div class="pg">…</div><div class="pg">…</div><div class="pg">…</div><div class="pg">…</div><div class="pg">…</div><div class="pg">…</div><div class="pg">…</div><div class="pg">…</div><div class="pg">12606</div>
+      </div>
+      <p class="small muted" style="margin-top:12px">The table area is called the <b>heap</b>: rows are in no particular order.</p>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Write 12,606 on the whiteboard. You will come back to it many times.</p><p>"Heap" just means "pile": rows are not sorted by customer.</p></aside>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <p class="kicker">Analogy</p>
+  <h2>An index is the index at the back of a book</h2>
+  <div class="body">
+    <div class="cols">
+      <div class="card red">
+        <span class="label">No index</span>
+        <h3>Read all 500 pages</h3>
+        <p>Look at every page to find the word "UPI".</p>
+        <p class="red"><b>= Sequential Scan</b></p>
+      </div>
+      <div class="card green">
+        <span class="label">With index</span>
+        <h3>Check the back: "UPI → p. 212"</h3>
+        <p>Open only page 212.</p>
+        <p class="green"><b>= Index Scan</b></p>
+      </div>
+    </div>
+    <div class="gap"></div>
+    <div class="tip step">An index is a <b>sorted list</b> of values + the location of each row.</div>
+  </div>
+  <aside class="notes-src"><p>Everyone knows a book index. Hold onto this picture; Lab 02 extends it (phone directory for composite indexes).</p></aside>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <p class="kicker">Big picture</p>
+  <h2>SQL says <i>what</i>. The planner decides <i>how</i>.</h2>
+  <div class="body">
+    <div class="flow">
+      <div class="box"><b>Your SQL</b>"payments of u1000"</div>
+      <div class="arrow">→</div>
+      <div class="box blue"><b>Planner</b>prices every possible way, picks the cheapest</div>
+      <div class="arrow">→</div>
+      <div class="box amber"><b>Plan</b>"scan the whole table"</div>
+      <div class="arrow">→</div>
+      <div class="box green"><b>Executor</b>runs the plan, returns rows</div>
+    </div>
+    <div class="gap"></div><div class="gap"></div>
+    <div class="cols step">
+      <div class="card"><h3><code>EXPLAIN</code></h3><p>Shows the <b>plan</b>. Does not run the query.</p></div>
+      <div class="card"><h3><code>EXPLAIN ANALYZE</code></h3><p><b>Runs</b> the query and shows plan + real measurements.</p></div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>The planner uses statistics about the data (gathered by ANALYZE) to estimate how many rows each step will produce.</p></aside>
+</section>
+
+<!-- 7 -->
+<section class="slide section">
+  <div class="body">
+    <p class="kicker">Part 1</p>
+    <h2>EXPLAIN<br>what is the plan?</h2>
+    <p class="lead">Steps 1–3 in the lab guide</p>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <p class="kicker">Step 2 · Predict</p>
+  <h2>There is no index on <code>payer_account</code></h2>
+  <div class="body">
+    <pre class="sql">EXPLAIN
+SELECT * FROM transactions
+WHERE payer_account = 'u1000@bank';</pre>
+    <div class="gap"></div>
+    <div class="predict">Will PostgreSQL read the whole table? Roughly how many rows will it expect to find?</div>
+  </div>
+  <aside class="notes-src"><p>Give 30 seconds. Ask two people for their guess before running.</p></aside>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <p class="kicker">Step 2 · See</p>
+  <h2>Your first plan</h2>
+  <div class="body top">
+    <pre class="plan"> <mark>Seq Scan</mark> on transactions  (cost=<mark>0.00..25106.00</mark> rows=<mark>98</mark> width=68)
+   Filter: (payer_account = 'u1000@bank'::text)</pre>
+    <div class="gap"></div>
+    <table>
+      <tr><th>Part</th><th>Meaning</th></tr>
+      <tr class="step"><td><code>Seq Scan</code></td><td>Read <b>every page</b>, top to bottom</td></tr>
+      <tr class="step"><td><code>Filter:</code></td><td>Check each row: keep it or throw it away</td></tr>
+      <tr class="step"><td><code>cost=0.00..25106.00</code></td><td>Estimated effort: first row .. all rows. <b class="red">Not milliseconds</b></td></tr>
+      <tr class="step"><td><code>rows=98</code></td><td>The planner's <b>guess</b> of matching rows</td></tr>
+      <tr class="step"><td><code>width=68</code></td><td>Average row size in bytes</td></tr>
+    </table>
+  </div>
+  <aside class="notes-src"><p>Reveal one row at a time. The most common fresher mistake is reading cost as time. Say it twice: cost is points.</p></aside>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <p class="kicker">Step 3</p>
+  <h2>Cost is simple arithmetic</h2>
+  <div class="body cols wide-left">
+    <table>
+      <tr><th>Work</th><th class="num">Count</th><th class="num">Price</th><th class="num">Points</th></tr>
+      <tr class="step"><td>Read a page</td><td class="num">12,606</td><td class="num">1.0</td><td class="num">12,606</td></tr>
+      <tr class="step"><td>Handle a row</td><td class="num">1,000,000</td><td class="num">0.01</td><td class="num">10,000</td></tr>
+      <tr class="step"><td>Check <code>payer = …</code></td><td class="num">1,000,000</td><td class="num">0.0025</td><td class="num">2,500</td></tr>
+      <tr class="hl step"><td><b>Total</b></td><td></td><td></td><td class="num"><b>25,106</b></td></tr>
+    </table>
+    <div>
+      <div class="analogy"><div class="icon">🧾</div><p>Like a <b>quotation</b>: the planner prices every possible plan and picks the <b>cheapest</b>.</p></div>
+      <div class="gap"></div>
+      <p class="small muted">Prices come from settings: <code>seq_page_cost</code>, <code>cpu_tuple_cost</code>, <code>cpu_operator_cost</code></p>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Optional depth. The point: cost is not magic, it is pages + rows times fixed prices. Learners can verify with the SELECT in Step 3.</p></aside>
+</section>
+
+<!-- 11 -->
+<section class="slide section">
+  <div class="body">
+    <p class="kicker">Part 2</p>
+    <h2>EXPLAIN ANALYZE<br>what really happened?</h2>
+    <p class="lead">Steps 4–5 in the lab guide</p>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <p class="kicker">Step 4 · See</p>
+  <h2>Run it and measure</h2>
+  <div class="body top">
+    <pre class="plan sm"> Seq Scan on transactions  (cost=0.00..25106.00 rows=98 width=68)
+                           (<mark>actual time=0.244..35.303 rows=103 loops=1</mark>)
+   Filter: (payer_account = 'u1000@bank'::text)
+   <mark class="red">Rows Removed by Filter: 999897</mark>
+ Planning Time: 0.010 ms
+ <mark>Execution Time: 35.311 ms</mark></pre>
+    <div class="gap"></div>
+    <table>
+      <tr class="step"><td><code>actual time=0.244..35.303</code></td><td><b>Real</b> ms: first row .. last row</td></tr>
+      <tr class="step"><td><code>rows=103</code> vs guess <code>98</code></td><td>The guess was good</td></tr>
+      <tr class="step"><td><code>loops=1</code></td><td>This step ran once</td></tr>
+      <tr class="step bad"><td><code>Rows Removed by Filter</code></td><td>Rows read and <b>thrown away</b></td></tr>
+    </table>
+  </div>
+  <aside class="notes-src"><p>Your milliseconds will differ from the slide. Rows and plan shape will match exactly; that is why we use a seeded dataset.</p></aside>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <p class="kicker">Step 4 · What it means</p>
+  <h2>99.99% of the work was wasted</h2>
+  <div class="body">
+    <div class="cols c3">
+      <div class="stat"><div class="num">1,000,000</div><div class="cap">rows read</div></div>
+      <div class="stat"><div class="num red">999,897</div><div class="cap">thrown away</div></div>
+      <div class="stat"><div class="num green">103</div><div class="cap">kept</div></div>
+    </div>
+    <div class="gap"></div><div class="gap"></div>
+    <div class="rule step">Big <code>Rows Removed by Filter</code> + small <code>rows=</code> → the #1 sign of a <b>missing index</b>.</div>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <p class="kicker">Step 5 · BUFFERS</p>
+  <h2>Count the pages, not just the milliseconds</h2>
+  <div class="body cols">
+    <div>
+      <pre class="sql sm">EXPLAIN (ANALYZE, BUFFERS)
+SELECT * FROM transactions
+WHERE payer_account = 'u1000@bank';</pre>
+      <div class="gap"></div>
+      <pre class="plan sm">   Rows Removed by Filter: 999897
+   <mark>Buffers: shared hit=12606</mark>
+ Execution Time: 36.569 ms</pre>
+    </div>
+    <div>
+      <p><b>12,606</b> = every page of the table.</p>
+      <div class="analogy step"><div class="icon">🗄️</div><p><b>hit</b> = file already on your desk (in memory)<br><b>read</b> = fetched from the cupboard first</p></div>
+      <div class="gap"></div>
+      <div class="rule step">Always use <code>(ANALYZE, BUFFERS)</code>. Time changes run to run; <b>pages don't</b>.</div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Run the query twice. Time differs; buffers stay at 12,606. That is why pages are the honest measure of work.</p></aside>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <p class="kicker">See it</p>
+  <h2>Seq Scan vs index: pages touched</h2>
+  <div class="body top pgsim sim" data-pgsim style="background:none;border:none;padding:0">
+    <div class="row-label">Table: 120 squares (1 square ≈ 105 pages)</div>
+    <div class="pages heap"></div>
+    <div class="row-label">Index on payer_account</div>
+    <div class="pages idx"></div>
+    <div class="sim-controls">
+      <button data-run="seq">▶ Seq Scan</button>
+      <button data-run="idx">▶ Index lookup</button>
+      <button data-run="reset">↺ Reset</button>
+      <span class="counter" style="margin-left:18px">pages read: <span data-count>0</span></span>
+    </div>
+    <div class="sim-msg" data-msg>Click a button to see which pages each method reads.</div>
+  </div>
+  <aside class="notes-src"><p>Click Seq Scan: every square lights up. Reset, then Index lookup: 3 index pages, then only the few heap pages that hold u1000's rows.</p></aside>
+</section>
+
+<!-- 16 -->
+<section class="slide section">
+  <div class="body">
+    <p class="kicker">Part 3</p>
+    <h2>The plan tree<br>read it bottom-up</h2>
+    <p class="lead">Step 6 in the lab guide</p>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <p class="kicker">Step 6 · Predict</p>
+  <h2>FAILED payments per channel</h2>
+  <div class="body">
+    <pre class="sql">EXPLAIN (ANALYZE, BUFFERS)
+SELECT channel, count(*) AS failed
+FROM transactions
+WHERE status = 'FAILED'
+GROUP BY channel
+ORDER BY failed DESC;</pre>
+    <div class="gap"></div>
+    <div class="predict">Three jobs: scan, group, sort. In which order? How many rows come out of each?</div>
+  </div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <p class="kicker">Step 6 · See</p>
+  <h2>Data flows up from the deepest line</h2>
+  <div class="body top">
+    <pre class="plan sm"> Sort  (... actual time=46.105..46.106 <mark>rows=3</mark> loops=1)                 <span class="step"><span class="good">③ sort 3 rows</span></span>
+   Sort Key: (count(*)) DESC
+   ->  HashAggregate  (... actual time=46.101..46.101 <mark>rows=3</mark> loops=1)  <span class="step"><span class="good">② group into 3</span></span>
+         Group Key: channel
+         ->  Seq Scan on transactions  (... <mark>rows=48998</mark> loops=1)        <span class="step"><span class="good">① read + filter</span></span>
+               Filter: (status = 'FAILED'::text)
+               Rows Removed by Filter: 951002
+ Execution Time: 46.117 ms</pre>
+    <div class="gap"></div>
+    <div class="cols step">
+      <div class="tip"><code>-&gt;</code> means "feeds into the line above".</div>
+      <div class="warn">Parent time <b>includes</b> its children. Never add times together.</div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Reveal ① first, then ②, then ③. Ask: why does the Sort take 46 ms if it only sorts 3 rows? Because its time includes everything below it.</p></aside>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <p class="kicker">Step 6 · Picture</p>
+  <h2>A funnel: rows shrink as they move up</h2>
+  <div class="body cols wide-right">
+    <div class="vflow funnel">
+      <div class="box green" style="width:40%"><b>Sort</b> → 3 rows</div>
+      <div class="arrow">▲</div>
+      <div class="box blue" style="width:60%"><b>HashAggregate</b> → 3 rows</div>
+      <div class="arrow">▲ 48,998 rows</div>
+      <div class="box amber" style="width:100%"><b>Seq Scan</b> reads 1,000,000 · keeps 48,998</div>
+    </div>
+    <div>
+      <p>Where did 48,995 rows go?</p>
+      <p class="step">They were not thrown away. They were <b>summarised</b> into 3 counts.</p>
+      <div class="rule step">Filter removes rows. Aggregate <b>summarises</b> rows.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 20 -->
+<section class="slide section">
+  <div class="body">
+    <p class="kicker">Part 4</p>
+    <h2>Indexes<br>read less, finish faster</h2>
+    <p class="lead">Steps 7–8 in the lab guide</p>
+  </div>
+</section>
+
+<!-- 21 -->
+<section class="slide">
+  <p class="kicker">Step 7</p>
+  <h2>Primary keys already have an index</h2>
+  <div class="body">
+    <pre class="sql sm">EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM transactions WHERE txn_id = 500000;</pre>
+    <div class="gap"></div>
+    <pre class="plan sm"> <mark>Index Scan</mark> using transactions_pkey on transactions
+        (cost=0.42..8.44 rows=1 width=68) (actual time=0.009..0.009 rows=1 loops=1)
+   <mark class="green">Index Cond: (txn_id = 500000)</mark>
+   <mark>Buffers: shared hit=7</mark>
+ Execution Time: 0.013 ms</pre>
+    <div class="gap"></div>
+    <div class="cols c3 step">
+      <div class="stat"><div class="num green">7</div><div class="cap">pages (vs 12,606)</div></div>
+      <div class="stat"><div class="num green">0.013</div><div class="cap">ms (vs ~36)</div></div>
+      <div class="stat"><div class="num">0</div><div class="cap">rows thrown away</div></div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>PostgreSQL creates an index for every PRIMARY KEY and UNIQUE constraint automatically. That is why this was fast without us doing anything.</p></aside>
+</section>
+
+<!-- 22 -->
+<section class="slide">
+  <p class="kicker">Read the difference</p>
+  <h2><code>Index Cond</code> vs <code>Filter</code></h2>
+  <div class="body cols">
+    <div class="card green">
+      <span class="label">Index Cond</span>
+      <h3>The index did the searching</h3>
+      <p>Jumps straight to matching rows.</p>
+      <p>Few pages read.</p>
+    </div>
+    <div class="card red">
+      <span class="label">Filter</span>
+      <h3>Rows checked one by one</h3>
+      <p>Reads rows first, then throws non-matches away.</p>
+      <p>Look for <code>Rows Removed by Filter</code>.</p>
+    </div>
+  </div>
+  <aside class="notes-src"><p>This one distinction lets freshers diagnose most slow lookups. Ask them to find "Index Cond" or "Filter" in every plan for the rest of the workshop.</p></aside>
+</section>
+
+<!-- 23 -->
+<section class="slide">
+  <p class="kicker">Step 8 · Predict</p>
+  <h2>Add an index for our customer</h2>
+  <div class="body">
+    <pre class="sql">CREATE INDEX idx_txn_payer ON transactions (payer_account);
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT * FROM transactions
+WHERE payer_account = 'u1000@bank';</pre>
+    <div class="gap"></div>
+    <div class="predict">Which scan will you see now? How many pages will it read?</div>
+  </div>
+</section>
+
+<!-- 24 -->
+<section class="slide">
+  <p class="kicker">Step 8 · See</p>
+  <h2>A Bitmap scan: two steps</h2>
+  <div class="body top">
+    <pre class="plan sm"> <mark>Bitmap Heap Scan</mark> on transactions  (... actual time=0.023..0.128 rows=103 loops=1)
+   Recheck Cond: (payer_account = 'u1000@bank'::text)
+   <mark>Heap Blocks: exact=103</mark>
+   Buffers: shared hit=103 read=3
+   ->  <mark>Bitmap Index Scan</mark> on idx_txn_payer  (... rows=103 loops=1)
+         Index Cond: (payer_account = 'u1000@bank'::text)
+         <mark>Buffers: shared read=3</mark>
+ Execution Time: 0.140 ms</pre>
+    <div class="gap"></div>
+    <div class="cols">
+      <div class="card blue step"><span class="label">① Bitmap Index Scan</span><p>Search the index → list of 103 row locations (3 pages)</p></div>
+      <div class="card green step"><span class="label">② Bitmap Heap Scan</span><p>Visit those 103 table pages, in page order</p></div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Most people predict "Index Scan". Bitmap is PostgreSQL's choice when rows are spread over many pages; the next slide explains why.</p></aside>
+</section>
+
+<!-- 25 -->
+<section class="slide">
+  <p class="kicker">Why "Bitmap"?</p>
+  <h2>Collect all locations first, then visit each page once</h2>
+  <div class="body cols wide-right">
+    <div class="analogy"><div class="icon">🛒</div><p>A shopping list <b>sorted by aisle</b>: you walk the shop once, in order, instead of running back and forth.</p></div>
+    <div class="vflow">
+      <div class="box blue">Index → 103 locations (page 17, page 9 044, page 233, …)</div>
+      <div class="arrow">▼ sort by page number</div>
+      <div class="box amber">page 17, page 233, …, page 9 044</div>
+      <div class="arrow">▼ read each page once, in order</div>
+      <div class="box green">103 rows returned</div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Our 103 rows live on 103 different pages (payments are stored in time order, not by customer). Bitmap avoids jumping randomly back and forth.</p></aside>
+</section>
+
+<!-- 26 -->
+<section class="slide">
+  <p class="kicker">Step 8 · Proof</p>
+  <h2>Same query, same answer, far less work</h2>
+  <div class="body">
+    <table>
+      <tr><th></th><th>Before</th><th>After index</th></tr>
+      <tr><td>Plan</td><td>Seq Scan</td><td>Bitmap Index Scan → Bitmap Heap Scan</td></tr>
+      <tr class="hl"><td>Pages</td><td class="red"><b>12,606</b></td><td class="green"><b>106</b></td></tr>
+      <tr><td>Rows thrown away</td><td>999,897</td><td>0</td></tr>
+      <tr class="hl"><td>Time</td><td>~36 ms</td><td>~0.1 ms</td></tr>
+      <tr><td>Rows returned</td><td>103</td><td>103</td></tr>
+    </table>
+    <div class="gap"></div>
+    <div class="rule step">The index helped because we wanted <b>very few rows</b>: 103 out of 1,000,000.</div>
+  </div>
+  <aside class="notes-src"><p>Emphasise "same answer". A tuning change that changes the result is a bug, not an optimisation. Lab 04 makes this a habit.</p></aside>
+</section>
+
+<!-- 27 -->
+<section class="slide">
+  <p class="kicker">Summary</p>
+  <h2>Three ways to read a table</h2>
+  <div class="body cols c3">
+    <div class="card red"><span class="label">Seq Scan</span><h3>Read every page</h3><p>Best when you need <b>many</b> rows, or there is no useful index.</p></div>
+    <div class="card green"><span class="label">Index Scan</span><h3>Jump to the row</h3><p>Best for <b>one or a few</b> rows, e.g. by primary key.</p></div>
+    <div class="card blue"><span class="label">Bitmap Scan</span><h3>Collect, then visit</h3><p>Best for a <b>moderate</b> number of rows spread over many pages.</p></div>
+  </div>
+  <aside class="notes-src"><p>Lab 02 shows when PostgreSQL deliberately chooses Seq Scan even though an index exists.</p></aside>
+</section>
+
+<!-- 28 -->
+<section class="slide section">
+  <div class="body">
+    <p class="kicker">Part 5</p>
+    <h2>Parallel query<br>and one safety rule</h2>
+    <p class="lead">Steps 9–10 in the lab guide</p>
+  </div>
+</section>
+
+<!-- 29 -->
+<section class="slide">
+  <p class="kicker">Step 9</p>
+  <h2>Three workers share one scan</h2>
+  <div class="body top">
+    <pre class="plan xs"> Sort  (... rows=3 loops=1)
+   ->  Finalize GroupAggregate  (... rows=3 loops=1)
+         ->  <mark>Gather Merge</mark>  (... rows=9 loops=1)
+               <mark>Workers Launched: 2</mark>
+               ->  Sort  (... rows=3 loops=3)
+                     ->  Partial HashAggregate  (... rows=3 loops=3)
+                           ->  <mark>Parallel Seq Scan</mark> on transactions  (... <mark>rows=16333 loops=3</mark>)
+                                 Rows Removed by Filter: 317001
+ Execution Time: 19.843 ms</pre>
+    <div class="gap"></div>
+    <div class="cols c3">
+      <div class="worker step"><b>Main process</b><div class="bar"></div><span class="small">⅓ of pages</span></div>
+      <div class="worker step"><b>Worker 1</b><div class="bar"></div><span class="small">⅓ of pages</span></div>
+      <div class="worker step"><b>Worker 2</b><div class="bar"></div><span class="small">⅓ of pages</span></div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>RESET max_parallel_workers_per_gather first. The plan looks scary but it is the same 3 jobs (scan, group, sort), done by 3 workers, then combined.</p></aside>
+</section>
+
+<!-- 30 -->
+<section class="slide">
+  <p class="kicker">Step 9 · Read it</p>
+  <h2><code>loops=3</code> means "per worker"</h2>
+  <div class="body">
+    <div class="flow">
+      <div class="box"><b>16,333 × 3</b>≈ 48,998 rows scanned</div>
+      <div class="arrow">→</div>
+      <div class="box"><b>3 × 3 = 9</b>partial groups</div>
+      <div class="arrow">→</div>
+      <div class="box blue"><b>Gather Merge</b>collects 9</div>
+      <div class="arrow">→</div>
+      <div class="box green"><b>Finalize</b>3 final rows</div>
+    </div>
+    <div class="gap"></div><div class="gap"></div>
+    <div class="cols">
+      <div class="rule step">With <code>loops=N</code>, multiply <code>rows</code> by N.</div>
+      <div class="warn step">Parallel shares the work; it does <b>not</b> reduce it. Still 12,606 pages.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 31 -->
+<section class="slide">
+  <p class="kicker">Step 10 · Safety</p>
+  <h2><code>EXPLAIN ANALYZE</code> really runs the statement</h2>
+  <div class="body cols wide-left">
+    <pre class="sql sm">BEGIN;
+EXPLAIN ANALYZE
+UPDATE transactions SET status = 'FAILED'
+WHERE txn_id = 1;
+
+SELECT status FROM transactions
+WHERE txn_id = 1;          -- FAILED: changed!
+
+ROLLBACK;                  -- undo</pre>
+    <div>
+      <div class="card green"><span class="label">Safe</span><p><code>EXPLAIN</code>: plan only</p></div>
+      <div class="gap"></div>
+      <div class="card red"><span class="label">Runs for real</span><p><code>EXPLAIN ANALYZE</code> on <code>UPDATE / DELETE / INSERT</code></p></div>
+      <div class="gap"></div>
+      <div class="rule step">Wrap it in <code>BEGIN; … ROLLBACK;</code></div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Tell a story: someone ran EXPLAIN ANALYZE DELETE on production "just to see the plan". Don't be that person.</p></aside>
+</section>
+
+<!-- 32 -->
+<section class="slide">
+  <p class="kicker">Cheat sheet</p>
+  <h2>Read any plan in 5 questions</h2>
+  <div class="body">
+    <ol>
+      <li class="step">Which node is <b>most indented</b>? Start there.</li>
+      <li class="step">How does it <b>access</b> the table: Seq Scan or an index?</li>
+      <li class="step">How many rows are <b>thrown away</b>? (<code>Rows Removed by Filter</code>)</li>
+      <li class="step">Is the <b>estimate</b> (<code>rows=</code>) close to the <b>actual</b> rows?</li>
+      <li class="step">How many <b>pages</b>? (<code>Buffers</code>)</li>
+    </ol>
+  </div>
+  <aside class="notes-src"><p>This is on the printed cheat sheet. Use these 5 questions in every later lab.</p></aside>
+</section>
+
+<!-- 33 -->
+<section class="slide">
+  <p class="kicker">Avoid these</p>
+  <h2>Common mistakes</h2>
+  <div class="body cols">
+    <ul>
+      <li>Reading <code>cost</code> as milliseconds</li>
+      <li>Reading the plan top-down</li>
+      <li>Adding node times together</li>
+    </ul>
+    <ul>
+      <li>Forgetting <code>loops=3</code></li>
+      <li>Trusting a single timing run</li>
+      <li><code>EXPLAIN ANALYZE DELETE</code> without <code>ROLLBACK</code></li>
+    </ul>
+  </div>
+</section>
+
+<!-- 34 -->
+<section class="slide">
+  <p class="kicker">Quick quiz</p>
+  <h2>Check yourself</h2>
+  <div class="body small">
+    <table>
+      <tr><th>Question</th><th>Answer</th></tr>
+      <tr><td>1. Does <code>EXPLAIN</code> alone run the query?</td><td class="step">No. Only <code>EXPLAIN ANALYZE</code> does</td></tr>
+      <tr><td>2. <code>rows=98</code> and <code>actual … rows=103</code>: which is the guess?</td><td class="step"><code>rows=98</code></td></tr>
+      <tr><td>3. <code>shared hit=12606</code> on a 12,606-page table means?</td><td class="step">Full scan, all pages from cache</td></tr>
+      <tr><td>4. Which line runs first?</td><td class="step">The most indented one</td></tr>
+      <tr><td>5. <code>rows=500 loops=3</code>: total rows?</td><td class="step">1,500</td></tr>
+    </table>
+  </div>
+  <aside class="notes-src"><p>Ask the question, wait for a hand, then reveal. Use names; make it a quick game.</p></aside>
+</section>
+
+<!-- 35 -->
+<section class="slide">
+  <p class="kicker">Your turn</p>
+  <h2>Try it yourself</h2>
+  <div class="body small">
+    <ul>
+      <li><b>T1.</b> Same query for the busy payer <code>'u42@bank'</code>: how many rows and <code>Heap Blocks</code>? Why slower?</li>
+      <li><b>T2.</b> <code>WHERE status = 'FAILED' AND channel = 'WEB'</code>: compare the estimate with the actual rows.</li>
+      <li><b>T3.</b> In Step 6, which node handles the most rows? The fewest?</li>
+      <li><b>T4.</b> <code>EXPLAIN SELECT * FROM merchants WHERE merchant_account = 'merchant7';</code> Which index, and why does it exist?</li>
+    </ul>
+  </div>
+  <aside class="notes-src"><p>Answers in trainer/lab-01-answers.md. T1 (7,017 of 12,606 pages) sets up Lab 02's selectivity. T2 (≈7.6k estimated vs 22.7k actual) sets up Lab 04's statistics.</p></aside>
+</section>
+
+<!-- 36 -->
+<section class="slide title">
+  <div class="body">
+    <p class="kicker">Lab 01 · Recap</p>
+    <h2 style="font-size:52px">The slow part was <i>finding</i> 103 rows,<br>not <i>returning</i> them.</h2>
+    <div class="gap"></div>
+    <p class="lead">12,606 pages → 106 pages · 36 ms → 0.1 ms · same 103 rows</p>
+    <div class="gap"></div>
+    <p class="lead"><b>Next: Lab 02</b>, Index Design: which index, which columns, which order.</p>
+  </div>
+</section>
+
+</div>
+
+<script src="assets/deck.js"></script>
+<script>
+/* Page-scan simulator (slide 15) */
+(function () {
+  const root = document.querySelector('[data-pgsim]');
+  const heap = root.querySelector('.heap'), idx = root.querySelector('.idx');
+  const count = root.querySelector('[data-count]'), msg = root.querySelector('[data-msg]');
+  const target = [7, 23, 38, 51, 66, 79, 94, 112];   // squares holding u1000's rows
+  for (let i = 0; i < 120; i++) heap.append(Object.assign(document.createElement('div'), { className: 'pg' }));
+  for (let i = 0; i < 3; i++) idx.append(Object.assign(document.createElement('div'), { className: 'pg', textContent: 'idx' }));
+  let timer = null;
+  function reset() {
+    clearInterval(timer);
+    root.querySelectorAll('.pg').forEach(p => p.classList.remove('read', 'hit'));
+    count.textContent = '0';
+    msg.textContent = 'Click a button to see which pages each method reads.';
+  }
+  function seq() {
+    reset(); let i = 0; const pgs = heap.children;
+    msg.textContent = 'Seq Scan: read every page, check every row…';
+    timer = setInterval(() => {
+      if (i >= pgs.length) { clearInterval(timer); msg.textContent = 'Seq Scan done: 12,606 pages read to find 103 rows.'; count.textContent = '12,606'; return; }
+      pgs[i].classList.add(target.includes(i) ? 'hit' : 'read');
+      count.textContent = Math.round((i + 1) * 105).toLocaleString();
+      i++;
+    }, 18);
+  }
+  function lookup() {
+    reset(); let step = 0;
+    msg.textContent = 'Index lookup: search the index first…';
+    timer = setInterval(() => {
+      if (step < 3) { idx.children[step].classList.add('hit'); count.textContent = String(step + 1); }
+      else if (step - 3 < target.length) { heap.children[target[step - 3]].classList.add('hit'); count.textContent = '…'; }
+      else { clearInterval(timer); count.textContent = '106'; msg.textContent = 'Index lookup done: 3 index pages + 103 table pages = 106.'; }
+      step++;
+    }, 260);
+  }
+  root.querySelector('[data-run="seq"]').onclick = seq;
+  root.querySelector('[data-run="idx"]').onclick = lookup;
+  root.querySelector('[data-run="reset"]').onclick = reset;
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,764 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab 06 · Functions and Procedures</title>
+<link rel="stylesheet" href="assets/deck.css">
+<style>
+  pre.py { background: #1b1630; }
+  pre.py .kw { color: #c9a7ff; }
+  .side-label { font-size: 15px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; margin: 0 0 6px 2px; }
+  .side-label.py { color: var(--violet); }
+  .side-label.pg { color: var(--blue); }
+  .vs { display: grid; place-items: center; font-size: 22px; font-weight: 800; color: var(--muted); }
+  .cols.code-vs { grid-template-columns: 1fr 1fr; gap: 28px; }
+  .bigq { font-size: 34px; line-height: 1.35; }
+</style>
+</head>
+<body data-deck="Lab 06 · Functions and Procedures">
+<div class="deck">
+
+<!-- 1 -->
+<section class="slide title">
+  <div class="body">
+    <p class="kicker">SQL Performance Workshop · Lab 06</p>
+    <h1>Functions and<br>Procedures</h1>
+    <p class="lead">Write the query <b>once</b>. Call it anywhere. Keep it <b>fast</b>.</p>
+  </div>
+  <aside class="notes-src"><p>Last lab. Everything so far was about single queries. Now we package queries into reusable building blocks, like Python functions, without losing the speed we fought for in Labs 01–05.</p></aside>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <p class="kicker">The story</p>
+  <h2>Support types the same query every day</h2>
+  <div class="body cols wide-left">
+    <pre class="sql sm">SELECT t.txn_id, t.txn_ts, t.amount, t.status,
+       m.merchant_name
+FROM transactions t
+LEFT JOIN merchants m
+       ON m.merchant_account = t.payee_account
+WHERE t.payer_account = 'u1000@bank'
+ORDER BY t.txn_ts DESC
+LIMIT 5;</pre>
+    <div>
+      <div class="card red"><span class="label">Today</span><p>Copied into every screen. One typo away from a bug.</p></div>
+      <div class="gap"></div>
+      <div class="card green step"><span class="label">Goal</span><p><code>SELECT * FROM get_payments('u1000@bank');</code></p></div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Ask: "In Python, what do you do when you copy the same 8 lines three times?" Answer: write a function. Same idea here.</p></aside>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <p class="kicker">Today</p>
+  <h2>Six skills for this lab</h2>
+  <div class="body">
+    <div class="cols c3">
+      <div class="card blue"><span class="label">1 · Write</span><p>SQL functions with parameters and defaults</p></div>
+      <div class="card blue"><span class="label">2 · Program</span><p>PL/pgSQL: variables, IF, errors</p></div>
+      <div class="card blue"><span class="label">3 · Promise</span><p>IMMUTABLE / STABLE / VOLATILE</p></div>
+    </div>
+    <div class="gap"></div>
+    <div class="cols c3">
+      <div class="card green"><span class="label">4 · Avoid</span><p>Functions that hide indexes</p></div>
+      <div class="card green"><span class="label">5 · Think in sets</span><p>One statement, not a loop</p></div>
+      <div class="card green"><span class="label">6 · Batch</span><p>Procedures that COMMIT as they go</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <p class="kicker">You already know this</p>
+  <h2>Python function ↔ PostgreSQL function</h2>
+  <div class="body cols code-vs">
+    <div>
+      <p class="side-label py">Python</p>
+      <pre class="py sm"><span class="kw">def</span> get_payments(payer, limit=5):
+    rows = db.query(...)
+    <span class="kw">return</span> rows
+
+get_payments("u1000@bank")
+get_payments(limit=3, payer="u42@bank")
+
+<span class="kw">raise</span> ValueError("bad payer")
+<span class="kw">try</span>: ...
+<span class="kw">except</span> Exception <span class="kw">as</span> e: ...</pre>
+    </div>
+    <div>
+      <p class="side-label pg">PostgreSQL</p>
+      <pre class="sql sm">CREATE FUNCTION get_payments(
+    p_payer text, p_limit int DEFAULT 5)
+RETURNS TABLE (...) AS $$ SELECT ... $$;
+
+SELECT * FROM get_payments('u1000@bank');
+... get_payments(p_limit => 3, p_payer => 'u42@bank')
+
+RAISE EXCEPTION 'bad payer';
+BEGIN ...
+EXCEPTION WHEN others THEN ... SQLERRM</pre>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Walk line by line: def ↔ CREATE FUNCTION, default ↔ DEFAULT, keyword args ↔ =>, raise ↔ RAISE EXCEPTION, try/except ↔ EXCEPTION block. Freshers relax when they see the mapping.</p></aside>
+</section>
+
+<!-- 5 -->
+<section class="slide section">
+  <div class="body">
+    <p class="kicker">Part 1</p>
+    <h2>SQL functions<br>write once, call anywhere</h2>
+    <p class="lead">Steps 1–3 in the lab guide</p>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <p class="kicker">Step 2</p>
+  <h2>Wrap the query in a function</h2>
+  <div class="body cols wide-left">
+    <pre class="sql sm">CREATE FUNCTION get_payments(
+    p_payer text,
+    p_limit int DEFAULT 5)
+RETURNS TABLE (txn_id bigint, txn_ts timestamp,
+    amount numeric, status text, merchant_name text)
+LANGUAGE sql
+STABLE
+AS $$
+    SELECT t.txn_id, t.txn_ts, t.amount, t.status,
+           m.merchant_name
+    FROM transactions t
+    LEFT JOIN merchants m
+           ON m.merchant_account = t.payee_account
+    WHERE t.payer_account = p_payer
+    ORDER BY t.txn_ts DESC
+    LIMIT p_limit;
+$$;</pre>
+    <table class="small">
+      <tr class="step"><td><code>p_payer text</code></td><td>Input parameter</td></tr>
+      <tr class="step"><td><code>DEFAULT 5</code></td><td>Optional, like <code>limit=5</code></td></tr>
+      <tr class="step"><td><code>RETURNS TABLE</code></td><td>Returns rows: use it like a table</td></tr>
+      <tr class="step"><td><code>LANGUAGE sql</code></td><td>Body is plain SQL</td></tr>
+      <tr class="step"><td><code>STABLE</code></td><td>Reads data, never changes it</td></tr>
+      <tr class="step"><td><code>$$ … $$</code></td><td>Quotes around the body</td></tr>
+    </table>
+  </div>
+  <aside class="notes-src"><p>The body is exactly the Step 1 query, with 'u1000@bank' replaced by p_payer and 5 by p_limit. Nothing else changed.</p></aside>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <p class="kicker">Step 2 · Call it</p>
+  <h2>Three ways to call</h2>
+  <div class="body">
+    <pre class="sql">SELECT * FROM get_payments('u1000@bank');                          -- default: 5 rows
+SELECT * FROM get_payments('u1000@bank', 2);                       -- positional
+SELECT * FROM get_payments(p_limit => 3, p_payer => 'u42@bank');   -- named</pre>
+    <div class="gap"></div>
+    <pre class="plan sm"> txn_id |       txn_ts        |  amount  | status  |    merchant_name
+--------+---------------------+----------+---------+---------------------
+ 998042 | 2026-03-31 19:44:51 | 28471.72 | SUCCESS | Fresh Travel #1293
+ 991566 | 2026-03-31 05:47:20 | 12351.91 | SUCCESS | Quick Grocery #1817
+ 971246 | 2026-03-29 09:33:57 |   821.58 | SUCCESS | Metro Travel #751
+ ...</pre>
+    <div class="gap"></div>
+    <div class="rule step">A function = a <b>named, reusable query</b> with parameters.</div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <p class="kicker">Step 3 · Predict</p>
+  <h2>Is the function still fast?</h2>
+  <div class="body">
+    <pre class="sql">EXPLAIN (ANALYZE, BUFFERS)
+SELECT * FROM get_payments('u1000@bank');</pre>
+    <div class="gap"></div>
+    <div class="predict">Will the plan show the index on <code>payer_account</code>, or just "a function"?</div>
+  </div>
+  <aside class="notes-src"><p>Most freshers expect "a function is a black box". Let them commit to a guess.</p></aside>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <p class="kicker">Step 3 · See</p>
+  <h2>The function was <i>inlined</i></h2>
+  <div class="body top">
+    <pre class="plan xs"> Limit  (... actual time=0.397..0.398 rows=5 loops=1)
+   ->  Sort  (... rows=5 loops=1)
+         Sort Key: t.txn_ts DESC
+         ->  Hash Left Join  (... rows=103 loops=1)
+               ->  Bitmap Heap Scan on transactions t  (... rows=103 loops=1)
+                     ->  <mark>Bitmap Index Scan on idx_txn_payer</mark>  (... rows=103 loops=1)
+                           <mark class="green">Index Cond: (payer_account = 'u1000@bank'::text)</mark>
+               ->  Hash  (... rows=2000 loops=1)
+                     ->  Seq Scan on merchants m  (... rows=2000 loops=1)
+ <mark>Execution Time: 0.407 ms</mark></pre>
+    <div class="gap"></div>
+    <div class="cols">
+      <div class="card green step"><span class="label">LANGUAGE sql</span><p>Body is pasted into your query. Real plan visible. No extra cost.</p></div>
+      <div class="card amber step"><span class="label">LANGUAGE plpgsql</span><p>Shows only <code>Function Scan</code>. The inner plan is hidden.</p></div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Inlining works for simple LANGUAGE sql functions: one SELECT, STABLE or IMMUTABLE, not STRICT, not SECURITY DEFINER. For PL/pgSQL, copy the inner query and EXPLAIN it (Try-it T5).</p></aside>
+</section>
+
+<!-- 10 -->
+<section class="slide section">
+  <div class="body">
+    <p class="kicker">Part 2</p>
+    <h2>PL/pgSQL<br>SQL + variables + IF + errors</h2>
+    <p class="lead">Steps 4–5 in the lab guide</p>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <p class="kicker">Step 4</p>
+  <h2>Anatomy of a PL/pgSQL function</h2>
+  <div class="body cols wide-left">
+    <pre class="sql xs">CREATE FUNCTION payment_summary(p_payer text)
+RETURNS text LANGUAGE plpgsql STABLE AS $$
+<mark>DECLARE</mark>
+  v_total int; v_failed int; v_level text;
+<mark>BEGIN</mark>
+  PERFORM 1 FROM accounts WHERE account_id = p_payer;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Unknown payer: %', p_payer;
+  END IF;
+  SELECT count(*),
+         count(*) FILTER (WHERE status = 'FAILED')
+  INTO v_total, v_failed
+  FROM transactions WHERE payer_account = p_payer;
+  IF v_total = 0 THEN                v_level := 'NEW';
+  ELSIF v_failed * 10 &gt; v_total THEN v_level := 'CHECK';
+  ELSE                               v_level := 'OK';
+  END IF;
+  RAISE NOTICE 'payer %: % payments', p_payer, v_total;
+  RETURN p_payer || ' | ' || v_level;
+<mark>END;</mark> $$;</pre>
+    <div class="small">
+      <ol>
+        <li class="step"><b>DECLARE</b>: variables (<code>v_</code>)</li>
+        <li class="step"><b>Validate</b>: <code>PERFORM</code> + <code>FOUND</code></li>
+        <li class="step"><b>Query INTO</b> variables</li>
+        <li class="step"><b>Decide</b>: <code>IF / ELSIF / ELSE</code></li>
+        <li class="step"><b>Tell</b>: <code>RAISE NOTICE</code></li>
+        <li class="step"><b>Answer</b>: <code>RETURN</code></li>
+      </ol>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Read it as a recipe: declare, validate, fetch, decide, tell, answer. This is a shortened version; the full one (with amount paid and a HINT) is in sql/lab06.sql.</p></aside>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <p class="kicker">Step 4 · Building blocks</p>
+  <h2>Six words you will use every time</h2>
+  <div class="body">
+    <table>
+      <tr><th>PL/pgSQL</th><th>Python</th><th>Meaning</th></tr>
+      <tr><td><code>DECLARE v_total int;</code></td><td><code>total = 0</code></td><td>A local variable</td></tr>
+      <tr><td><code>SELECT … INTO v_total</code></td><td><code>total = db.one(…)</code></td><td>Store a query result</td></tr>
+      <tr><td><code>PERFORM …</code></td><td><code>db.run(…)</code></td><td>Run a query, ignore the result</td></tr>
+      <tr><td><code>FOUND</code></td><td><code>if rows:</code></td><td>Did the last query find a row?</td></tr>
+      <tr><td><code>RAISE NOTICE</code></td><td><code>print()</code></td><td>Show a message</td></tr>
+      <tr><td><code>RAISE EXCEPTION</code></td><td><code>raise</code></td><td>Stop with an error</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <p class="kicker">Step 4 · See</p>
+  <h2>One function, four answers</h2>
+  <div class="body">
+    <pre class="sql sm">SELECT payment_summary('u1000@bank');
+SELECT payment_summary('u7501@bank');
+SELECT payment_summary('u9950@bank');
+SELECT payment_summary('nobody@bank');</pre>
+    <div class="gap"></div>
+    <pre class="plan sm"> u1000@bank | payments=103 failed=4 paid=Rs 724985.83 | <span class="good">OK</span>
+ u7501@bank | payments=109 failed=15 paid=Rs 270420.11 | <span class="bad">CHECK</span>
+ u9950@bank | payments=0 failed=0 paid=Rs 0 | NEW
+<span class="bad">ERROR:  Unknown payer: nobody@bank</span>
+HINT:  Payer ids look like u1000@bank</pre>
+    <div class="gap"></div>
+    <div class="tip step">A clear error message + HINT saves the caller an hour of guessing.</div>
+  </div>
+  <aside class="notes-src"><p>u7501 has 15 failures out of 109 (more than 10%), so CHECK. u9950 is one of the 100 accounts that never paid. nobody@bank does not exist, so the validation fires.</p></aside>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <p class="kicker">Step 5</p>
+  <h2>RETURN QUERY and try / except</h2>
+  <div class="body cols code-vs">
+    <div>
+      <p class="side-label pg">Validate, then return rows</p>
+      <pre class="sql xs">BEGIN
+    IF p_limit NOT BETWEEN 1 AND 100 THEN
+        RAISE EXCEPTION 'p_limit must be 1..100, got %',
+              p_limit;
+    END IF;
+
+    RETURN QUERY
+        SELECT * FROM get_payments(p_payer, p_limit);
+
+    IF NOT FOUND THEN
+        RAISE NOTICE 'No payments for %', p_payer;
+    END IF;
+END;</pre>
+      <pre class="plan xs" style="margin-top:10px">NOTICE:  No payments for u9950@bank
+ERROR:   p_limit must be 1..100, got 500</pre>
+    </div>
+    <div>
+      <p class="side-label pg">Catch an error</p>
+      <pre class="sql xs">BEGIN
+    RETURN payment_summary(p_payer);
+EXCEPTION
+    WHEN others THEN
+        RETURN 'error: ' || SQLERRM;
+END;</pre>
+      <pre class="plan xs" style="margin-top:10px"> error: Unknown payer: nobody@bank</pre>
+      <div class="gap"></div>
+      <div class="rule step">Validate early. Catch errors only where you can do something useful.</div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>RETURN QUERY appends rows and keeps going; the function ends at END. SQLERRM is the message text, like str(e) in Python.</p></aside>
+</section>
+
+<!-- 15 -->
+<section class="slide section">
+  <div class="body">
+    <p class="kicker">Part 3</p>
+    <h2>Volatility<br>a promise to the planner</h2>
+    <p class="lead">Step 6 in the lab guide</p>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <p class="kicker">Step 6</p>
+  <h2>Three promises</h2>
+  <div class="body cols c3">
+    <div class="card green">
+      <span class="label">IMMUTABLE</span>
+      <h3>🧮 A calculator</h3>
+      <p>Same input → same output, <b>forever</b>. Reads no tables.</p>
+      <p class="small muted"><code>upper()</code>, maths, <code>clean_name()</code></p>
+    </div>
+    <div class="card blue">
+      <span class="label">STABLE</span>
+      <h3>🏦 Today's balance</h3>
+      <p>Same output <b>within one query</b>. May read tables.</p>
+      <p class="small muted"><code>now()</code>, <code>get_payments()</code></p>
+    </div>
+    <div class="card red">
+      <span class="label">VOLATILE</span>
+      <h3>🎲 A dice roll</h3>
+      <p>Can change <b>every call</b>, or changes data. The default.</p>
+      <p class="small muted"><code>random()</code>, anything with <code>UPDATE</code></p>
+    </div>
+  </div>
+  <aside class="notes-src"><p>The label tells the planner what it may cache or pre-compute. The planner believes you; it does not check.</p></aside>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <p class="kicker">Step 6 · See</p>
+  <h2>IMMUTABLE functions can be indexed</h2>
+  <div class="body top">
+    <pre class="sql sm">CREATE FUNCTION clean_name(p_name text) RETURNS text
+LANGUAGE sql IMMUTABLE AS $$ SELECT lower(trim(p_name)) $$;
+
+... WHERE clean_name(holder_name) = clean_name('  RAVI Kumar ');   -- 25 accounts</pre>
+    <div class="gap"></div>
+    <div class="cols">
+      <div>
+        <p class="code-label">Before</p>
+        <pre class="plan xs"> <mark class="red">Seq Scan</mark> on accounts (... rows=25 loops=1)
+   Filter: (lower(TRIM(BOTH FROM holder_name))
+            = 'ravi kumar'::text)
+   <mark class="red">Rows Removed by Filter: 9975</mark></pre>
+      </div>
+      <div class="step">
+        <p class="code-label">After CREATE INDEX … (clean_name(holder_name))</p>
+        <pre class="plan xs"> <mark class="green">Bitmap Index Scan on idx_acc_clean_name</mark>
+   Index Cond: (lower(TRIM(BOTH FROM holder_name))
+                = 'ravi kumar'::text)
+ Execution Time: 0.034 ms</pre>
+      </div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>An expression index stores clean_name(holder_name) for every row, computed in advance. That is only safe if the result can never change, hence IMMUTABLE.</p></aside>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <p class="kicker">Step 6 · Watch out</p>
+  <h2>Lying about volatility gives wrong answers</h2>
+  <div class="body">
+    <pre class="sql sm">CREATE INDEX idx_acc_bad ON accounts (clean_name_stable(holder_name));</pre>
+    <pre class="plan sm" style="margin-top:8px"><span class="bad">ERROR:  functions in index expression must be marked IMMUTABLE</span></pre>
+    <div class="gap"></div>
+    <div class="cols">
+      <div class="card green"><span class="label">PostgreSQL protects you</span><p>STABLE / VOLATILE functions cannot be indexed.</p></div>
+      <div class="card red step"><span class="label">…unless you lie</span><p>Mark a table-reading function IMMUTABLE → the index keeps <b>old answers</b>. No error, just wrong rows.</p></div>
+    </div>
+    <div class="gap"></div>
+    <div class="rule step">Label honestly. Unsure? <code>STABLE</code> for reads, <code>VOLATILE</code> for writes.</div>
+  </div>
+  <aside class="notes-src"><p>Story: someone marks get_category(merchant) IMMUTABLE and indexes it. The merchant later changes category; the index still has the old one. Queries silently return wrong rows.</p></aside>
+</section>
+
+<!-- 19 -->
+<section class="slide section">
+  <div class="body">
+    <p class="kicker">Part 4</p>
+    <h2>Three performance traps</h2>
+    <p class="lead">Steps 7–9 in the lab guide</p>
+  </div>
+</section>
+
+<!-- 20 -->
+<section class="slide">
+  <p class="kicker">Step 7 · Predict</p>
+  <h2>The index on <code>payer_account</code> exists. Which is fast?</h2>
+  <div class="body">
+    <pre class="sql">-- A: function on the COLUMN
+SELECT count(*) FROM transactions
+WHERE clean_name(payer_account) = 'u1000@bank';
+
+-- B: function on the VALUE
+SELECT count(*) FROM transactions
+WHERE payer_account = clean_name('  U1000@BANK ');</pre>
+    <div class="gap"></div>
+    <div class="predict">Both return 103. Will both use the index to <b>search</b>?</div>
+  </div>
+</section>
+
+<!-- 21 -->
+<section class="slide">
+  <p class="kicker">Step 7 · See</p>
+  <h2>Trap 1: a function on the column</h2>
+  <div class="body top">
+    <p class="code-label">A · function on the column</p>
+    <pre class="plan xs">   ->  Index Only Scan using idx_txn_payer on transactions  (... rows=103 loops=1)
+         <mark class="red">Filter: (lower(TRIM(BOTH FROM payer_account)) = 'u1000@bank'::text)</mark>
+         <mark class="red">Rows Removed by Filter: 999897</mark>
+ <mark class="red">Execution Time: 187.237 ms</mark></pre>
+    <div class="gap"></div>
+    <p class="code-label">B · function on the value</p>
+    <pre class="plan xs">   ->  Index Only Scan using idx_txn_payer on transactions  (... rows=103 loops=1)
+         <mark class="green">Index Cond: (payer_account = 'u1000@bank'::text)</mark>
+         Buffers: shared hit=4
+ <mark class="green">Execution Time: 0.029 ms</mark></pre>
+    <div class="gap"></div>
+    <div class="rule step">Put the function on the <b>value</b>, not the column. (Or build an expression index.)</div>
+  </div>
+  <aside class="notes-src"><p>A uses the index only as a list to read end to end, running the function 1,000,000 times. Remember Lab 01: Filter = checked one by one; Index Cond = the index searched. 187 ms vs 0.03 ms.</p></aside>
+</section>
+
+<!-- 22 -->
+<section class="slide">
+  <p class="kicker">Step 8 · Predict</p>
+  <h2>A summary row for every account</h2>
+  <div class="body cols code-vs">
+    <div>
+      <p class="side-label pg">A · loop (10,000 times)</p>
+      <pre class="sql xs">FOR r IN SELECT account_id FROM accounts LOOP
+    SELECT count(*), coalesce(sum(amount), 0)
+    INTO v_count, v_paid
+    FROM transactions
+    WHERE payer_account = r.account_id
+      AND status = 'SUCCESS';
+
+    INSERT INTO customer_totals
+    VALUES (r.account_id, v_count, v_paid);
+END LOOP;</pre>
+    </div>
+    <div>
+      <p class="side-label pg">B · one statement</p>
+      <pre class="sql xs">INSERT INTO customer_totals
+SELECT a.account_id,
+       count(t.txn_id),
+       coalesce(sum(t.amount), 0)
+FROM accounts a
+LEFT JOIN transactions t
+       ON t.payer_account = a.account_id
+      AND t.status = 'SUCCESS'
+GROUP BY a.account_id;</pre>
+    </div>
+  </div>
+  <div class="predict step" style="margin-top:18px">Same 10,000 rows. Which is faster, and by how much?</div>
+  <aside class="notes-src"><p>Both run inside BEGIN ... ROLLBACK with \timing on. Ask the room: who has written loops like A in Python plus SQL? Most hands go up.</p></aside>
+</section>
+
+<!-- 23 -->
+<section class="slide">
+  <p class="kicker">Step 8 · See</p>
+  <h2>Trap 2: row-by-row thinking</h2>
+  <div class="body">
+    <div class="cols">
+      <div class="stat"><div class="num red">644 ms</div><div class="cap">A · loop: 10,000 queries + 10,000 inserts</div></div>
+      <div class="stat"><div class="num green">246 ms</div><div class="cap">B · one statement</div></div>
+    </div>
+    <div class="gap"></div>
+    <div class="analogy step"><div class="icon">🛒</div><p>A = <b>10,000 trips</b> to the shop, one item each. B = <b>one trip</b> with the full list.</p></div>
+    <div class="gap"></div>
+    <div class="cols step">
+      <div class="warn">That's <b>with</b> an index. Without one, A scans the table 10,000 times.</div>
+      <div class="rule">Think in <b>sets</b>. Loop only when each row needs different logic.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 24 -->
+<section class="slide">
+  <p class="kicker">Step 9</p>
+  <h2>Trap 3: one saved plan for every value</h2>
+  <div class="body cols">
+    <div>
+      <pre class="sql sm">PREPARE by_status(text) AS
+  SELECT count(*), sum(amount)
+  FROM transactions
+  WHERE status = $1;
+
+EXECUTE by_status('PENDING');   -- 1%
+EXECUTE by_status('SUCCESS');   -- 94%</pre>
+      <p class="small muted" style="margin-top:12px">PL/pgSQL functions save plans for their queries the same way.</p>
+    </div>
+    <div>
+      <div class="card green"><span class="label">Custom plan</span><p>👔 <b>Tailor-made</b>: built for the actual value.</p></div>
+      <div class="gap"></div>
+      <div class="card amber step"><span class="label">Generic plan</span><p>👕 <b>One size fits all</b>: built once with <code>$1</code>, without knowing the value.</p></div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Default plan_cache_mode = auto: the first 5 executions get custom plans; after that PostgreSQL may switch to the generic plan if it looks about as cheap.</p></aside>
+</section>
+
+<!-- 25 -->
+<section class="slide">
+  <p class="kicker">Step 9 · See</p>
+  <h2>Generic plans don't know the value</h2>
+  <div class="body">
+    <table>
+      <tr><th>Mode</th><th>Value</th><th>Plan</th><th class="num">Est. rows</th><th class="num">Pages</th><th class="num">Time</th></tr>
+      <tr class="good"><td>custom</td><td>PENDING</td><td>Index Scan</td><td class="num">10,733</td><td class="num">6,946</td><td class="num">5.2 ms</td></tr>
+      <tr class="good"><td>custom</td><td>SUCCESS</td><td>Seq Scan</td><td class="num">941,100</td><td class="num">12,606</td><td class="num">126 ms</td></tr>
+      <tr class="step"><td>generic</td><td>PENDING</td><td>Bitmap Heap Scan</td><td class="num"><b>333,333</b></td><td class="num">6,946</td><td class="num">6.1 ms</td></tr>
+      <tr class="step bad"><td>generic</td><td>SUCCESS</td><td>Bitmap Heap Scan</td><td class="num"><b>333,333</b></td><td class="num">13,401</td><td class="num">138 ms</td></tr>
+    </table>
+    <div class="gap"></div>
+    <pre class="plan xs step">   ->  Bitmap Heap Scan on transactions  (cost=3715.76..20488.42 <mark>rows=333333</mark> width=7)
+         <mark>Recheck Cond: (status = $1)</mark></pre>
+    <div class="gap"></div>
+    <div class="rule step">Skewed data + saved plans: test with a <b>busy</b> and a <b>rare</b> value.</div>
+  </div>
+  <aside class="notes-src"><p>3 statuses, so the generic plan assumes each is one third of the table: 333,333 rows. It picks one middle plan for all values. Here the damage is mild; on more skewed data it can be large. Fix if needed: plan_cache_mode = force_custom_plan.</p></aside>
+</section>
+
+<!-- 26 -->
+<section class="slide section">
+  <div class="body">
+    <p class="kicker">Part 5</p>
+    <h2>Procedures<br>jobs that commit as they go</h2>
+    <p class="lead">Steps 10–11 in the lab guide</p>
+  </div>
+</section>
+
+<!-- 27 -->
+<section class="slide">
+  <p class="kicker">Step 10</p>
+  <h2>Function or procedure?</h2>
+  <div class="body">
+    <table>
+      <tr><th></th><th>Function</th><th>Procedure</th></tr>
+      <tr><td>Called with</td><td><code>SELECT f(…)</code></td><td><code>CALL p(…)</code></td></tr>
+      <tr><td>Returns</td><td>a value or rows</td><td>nothing (or OUT params)</td></tr>
+      <tr class="hl"><td><code>COMMIT</code> inside</td><td class="red">❌ not allowed</td><td class="green">✅ allowed</td></tr>
+      <tr><td>Use for</td><td>calculations, lookups</td><td>batch jobs, maintenance</td></tr>
+    </table>
+    <div class="gap"></div>
+    <div class="rule step">Function = returns an <b>answer</b>. Procedure = does a <b>job</b>.</div>
+  </div>
+</section>
+
+<!-- 28 -->
+<section class="slide">
+  <p class="kicker">Step 10 · Run</p>
+  <h2>Expire old PENDING payments in batches</h2>
+  <div class="body cols wide-left">
+    <pre class="sql xs">CREATE OR REPLACE PROCEDURE expire_pending(
+    p_before timestamp, p_batch int DEFAULT 2000)
+LANGUAGE plpgsql AS $$
+DECLARE v_rows int; v_batch int := 0;
+BEGIN
+  LOOP
+    UPDATE pending_queue SET status = 'EXPIRED'
+    WHERE txn_id IN (SELECT txn_id FROM pending_queue
+                     WHERE status = 'PENDING'
+                       AND txn_ts &lt; p_before
+                     LIMIT p_batch);
+    GET DIAGNOSTICS v_rows = ROW_COUNT;
+    EXIT WHEN v_rows = 0;
+    v_batch := v_batch + 1;
+    <mark>COMMIT;</mark>                    -- save this batch
+    RAISE NOTICE 'batch %: % rows expired',
+                 v_batch, v_rows;
+  END LOOP;
+END; $$;
+
+CALL expire_pending('2026-03-01');</pre>
+    <div>
+      <pre class="plan xs">NOTICE:  batch 1: 2000 rows expired
+NOTICE:  batch 2: 2000 rows expired
+NOTICE:  batch 3: 2000 rows expired
+NOTICE:  batch 4: 651 rows expired
+
+ EXPIRED |  6651
+ PENDING |  3328</pre>
+      <div class="gap"></div>
+      <p class="small muted">Runs on <code>pending_queue</code>, a copy of the 9,979 PENDING payments, so the real data stays unchanged.</p>
+    </div>
+  </div>
+  <aside class="notes-src"><p>GET DIAGNOSTICS ... ROW_COUNT = how many rows the last statement touched. The loop stops when a batch finds nothing to do.</p></aside>
+</section>
+
+<!-- 29 -->
+<section class="slide">
+  <p class="kicker">Step 10 · Why batches?</p>
+  <h2>Small transactions, short locks</h2>
+  <div class="body">
+    <div class="analogy"><div class="icon">📦</div><p>Moving house <b>box by box</b>: if you stop halfway, every box already moved stays moved.</p></div>
+    <div class="gap"></div>
+    <div class="cols">
+      <div class="card green"><span class="label">Batches + COMMIT</span><ul class="small"><li>Locks held briefly</li><li>A crash loses one batch only</li><li>Progress visible to others</li></ul></div>
+      <div class="card red step"><span class="label">A function cannot do it</span>
+        <pre class="plan xs" style="margin-top:6px">SELECT try_commit();
+<span class="bad">ERROR:  invalid transaction termination</span></pre>
+      </div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Also: CALL expire_pending inside your own BEGIN ... ROLLBACK fails with the same error, because the procedure cannot commit a transaction it doesn't own.</p></aside>
+</section>
+
+<!-- 30 -->
+<section class="slide">
+  <p class="kicker">Step 11</p>
+  <h2>Name parameters <code>p_</code>, variables <code>v_</code></h2>
+  <div class="body cols code-vs">
+    <div>
+      <p class="side-label pg">Parameter named like a column</p>
+      <pre class="sql xs">CREATE FUNCTION count_payments(payer_account text)
+...
+    RETURN (SELECT count(*) FROM transactions
+            WHERE payer_account = payer_account);</pre>
+      <pre class="plan xs" style="margin-top:8px"><span class="bad">ERROR:  column reference "payer_account"
+        is ambiguous</span>
+DETAIL:  It could refer to either a PL/pgSQL
+         variable or a table column.</pre>
+    </div>
+    <div>
+      <p class="side-label pg">Fixed</p>
+      <pre class="sql xs">CREATE FUNCTION count_payments(p_payer text)
+RETURNS bigint LANGUAGE sql STABLE STRICT
+AS $$ SELECT count(*) FROM transactions
+      WHERE payer_account = p_payer $$;
+
+SELECT count_payments('u1000@bank');  -- 103
+SELECT count_payments(NULL);          -- NULL</pre>
+      <div class="gap"></div>
+      <div class="tip step"><code>STRICT</code>: any NULL input → NULL out, the body never runs.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 31 -->
+<section class="slide">
+  <p class="kicker">Cheat sheet</p>
+  <h2>Function checklist</h2>
+  <div class="body">
+    <ol class="small">
+      <li class="step">Can it be <b>one SQL statement</b>? Then don't loop.</li>
+      <li class="step">Correct <b>volatility</b> label?</li>
+      <li class="step">Parameters <code>p_…</code>, variables <code>v_…</code>, columns qualified?</li>
+      <li class="step">Inputs <b>validated</b>, clear error messages?</li>
+      <li class="step">Function on the <b>value</b> side of <code>WHERE</code>, not the column?</li>
+      <li class="step">Tested with a <b>busy</b> and a <b>rare</b> value?</li>
+      <li class="step"><code>SECURITY DEFINER</code>? Runs with the <b>owner's</b> rights: set <code>search_path</code>, grant narrowly.</li>
+    </ol>
+  </div>
+  <aside class="notes-src"><p>SECURITY DEFINER gets one sentence only: it's powerful and risky; treat it like sudo.</p></aside>
+</section>
+
+<!-- 32 -->
+<section class="slide">
+  <p class="kicker">Avoid these</p>
+  <h2>Common mistakes</h2>
+  <div class="body cols">
+    <ul class="small">
+      <li>Looping over rows for work one statement can do</li>
+      <li>Leaving everything <code>VOLATILE</code>, or <code>IMMUTABLE</code> on a table-reading function</li>
+      <li><code>WHERE my_func(column) = value</code></li>
+    </ul>
+    <ul class="small">
+      <li>Parameter named like a column</li>
+      <li><code>COMMIT</code> inside a function</li>
+      <li>Trusting <code>Function Scan</code> in EXPLAIN</li>
+      <li>Testing with one value only</li>
+    </ul>
+  </div>
+</section>
+
+<!-- 33 -->
+<section class="slide">
+  <p class="kicker">Quick quiz</p>
+  <h2>Check yourself</h2>
+  <div class="body small">
+    <table>
+      <tr><th>Question</th><th>Answer</th></tr>
+      <tr><td>1. Call with named arguments?</td><td class="step"><code>get_payments(p_limit =&gt; 3, p_payer =&gt; '…')</code></td></tr>
+      <tr><td>2. Which volatility can be indexed?</td><td class="step">Only <code>IMMUTABLE</code></td></tr>
+      <tr><td>3. Why is <code>WHERE clean_name(payer_account) = …</code> slow?</td><td class="step">Function runs on every row, no <code>Index Cond</code></td></tr>
+      <tr><td>4. Can a function COMMIT? A procedure?</td><td class="step">Function no · procedure yes</td></tr>
+      <tr><td>5. A plan shows <code>status = $1</code>. What is it?</td><td class="step">A generic plan</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- 34 -->
+<section class="slide">
+  <p class="kicker">Your turn</p>
+  <h2>Try it yourself</h2>
+  <div class="body small">
+    <ul>
+      <li><b>T1.</b> Write <code>merchant_payments(p_merchant, p_limit DEFAULT 10)</code>: latest payments received. Call it for <code>'merchant7'</code>.</li>
+      <li><b>T2.</b> Add level <code>'VIP'</code> to <code>payment_summary</code> when paid &gt; Rs 5,000,000. Test <code>u42@bank</code>, <code>u1000@bank</code>.</li>
+      <li><b>T3.</b> Volatility? <code>gst(amount)</code> · <code>payments_today(p_payer)</code> · <code>new_upi_ref()</code></li>
+      <li><b>T4.</b> Replace a loop that upper-cases PREMIUM cities with <b>one</b> <code>UPDATE</code>.</li>
+      <li><b>T5.</b> <code>EXPLAIN</code> the PL/pgSQL <code>get_payments_checked</code>. Where is the index? How do you see it?</li>
+    </ul>
+  </div>
+  <aside class="notes-src"><p>Answers in trainer/lab-06-answers.md. T2: only u42/u43/u44 reach VIP. T3: IMMUTABLE / STABLE / VOLATILE. T4: 1,500 rows. T5: only "Function Scan"; EXPLAIN the inner query.</p></aside>
+</section>
+
+<!-- 35 -->
+<section class="slide title">
+  <div class="body">
+    <p class="kicker">Lab 06 · Recap</p>
+    <h2 style="font-size:52px">A function is only as fast<br>as the query inside it.</h2>
+    <div class="gap"></div>
+    <p class="lead">SQL functions inline · label volatility honestly · function on the value · think in sets · procedures commit in batches</p>
+    <div class="gap"></div>
+    <p class="lead"><b>Workshop complete.</b> Keep the cheat sheet in <code>handouts/</code> at your desk.</p>
+  </div>
+</section>
+
+</div>
+<script src="assets/deck.js"></script>
+</body>
+</html>

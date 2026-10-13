@@ -1,0 +1,38 @@
+name: container-demo
+
+services:
+  service-a:
+    build: ./service-a
+    ports:
+      - "8080:8080"
+    environment:
+      SERVICE_B_URL: http://service-b:8080
+    depends_on:
+      service-b:
+        condition: service_healthy
+    networks:
+      - demo-net
+
+  service-b:
+    build: ./service-b
+    ports:
+      - "8081:8080"
+    environment:
+      DATA_DIR: /data
+    volumes:
+      - service-b-data:/data
+    networks:
+      - demo-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2).close()"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+networks:
+  demo-net:
+    driver: bridge
+
+volumes:
+  service-b-data:

@@ -1,0 +1,834 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab 02 · Index Design</title>
+<link rel="stylesheet" href="assets/deck.css">
+<style>
+  .sel .presets { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+  .sel input[type=range] { width: 100%; accent-color: var(--blue); height: 28px; }
+  .sel .bars { display: grid; grid-template-columns: 210px 1fr 230px; gap: 10px 16px; align-items: center; margin-top: 16px; font-size: 21px; }
+  .sel .track { height: 30px; background: #e6ecf4; border-radius: 8px; overflow: hidden; }
+  .sel .fill { height: 100%; border-radius: 8px; transition: width .25s; }
+  .sel .fill.idx { background: var(--blue); }
+  .sel .fill.seq { background: var(--red); width: 100%; }
+  .sel .val { font-family: var(--mono); font-weight: 700; text-align: right; }
+  .sel .verdict { margin-top: 16px; font-size: 24px; font-weight: 700; padding: 12px 18px; border-radius: 10px; }
+  .verdict.good { background: var(--green-soft); color: var(--green); }
+  .verdict.mid { background: var(--amber-soft); color: var(--amber); }
+  .verdict.bad { background: var(--red-soft); color: var(--red); }
+  .dir td { font-family: var(--mono); font-size: 20px; padding: 7px 14px; }
+  .dir tr.me td { background: var(--green-soft); font-weight: 700; }
+  .sizebar { display: grid; grid-template-columns: 220px 1fr 110px; gap: 12px 16px; align-items: center; font-size: 22px; }
+  .sizebar .b { height: 34px; border-radius: 8px; }
+  .brin-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 8px; }
+  .brin-grid div { border: 2px solid var(--line); border-radius: 8px; padding: 8px 6px; text-align: center; font-size: 16px; background: var(--soft); }
+  .brin-grid div b { display: block; font-size: 15px; color: var(--muted); }
+  .brin-grid div.hit { border-color: var(--green); background: var(--green-soft); }
+  .tl td { font-family: var(--mono); font-size: 19px; }
+</style>
+</head>
+<body data-deck="Lab 02 · Index Design">
+<div class="deck">
+
+<!-- 1 -->
+<section class="slide title">
+  <div class="body">
+    <p class="kicker">SQL Performance Workshop · Lab 02</p>
+    <h1>Index Design</h1>
+    <p class="lead">The right index is built for a <b>question</b>, not for a column.</p>
+  </div>
+  <aside class="notes-src"><p>Lab 01 proved one index can turn 12,606 pages into 106. Today: which index, which columns, which order, and when NOT to index.</p><p>Everyone runs <code>\i sql/reset.sql</code> first. Parallel query is off for the whole lab.</p></aside>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <p class="kicker">The story</p>
+  <h2>New requests from the business</h2>
+  <div class="body">
+    <div class="cols">
+      <div class="card blue step"><span class="label">Support</span><p>"Show <code>u1000@bank</code>'s <b>latest 10</b> payments"</p></div>
+      <div class="card blue step"><span class="label">Finance</span><p>"How many payments on <b>15 March</b>?"</p></div>
+    </div>
+    <div class="gap"></div>
+    <div class="cols">
+      <div class="card blue step"><span class="label">Call centre</span><p>"Find customer <b>RAVI KUMAR</b>, any case"</p></div>
+      <div class="card blue step"><span class="label">Operations</span><p>"Show the <b>failed payments</b> queue"</p></div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Each request needs a different kind of index. By the end, learners should be able to match each request to one row of the summary table.</p></aside>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <p class="kicker">Today</p>
+  <h2>Seven index tools</h2>
+  <div class="body">
+    <div class="cols c4">
+      <div class="card"><span class="label" style="color:var(--blue)">1</span><p><b>Selectivity</b><br>when an index helps</p></div>
+      <div class="card"><span class="label" style="color:var(--blue)">2</span><p><b>Composite</b><br>column order</p></div>
+      <div class="card"><span class="label" style="color:var(--blue)">3</span><p><b>SARGable</b><br>bare columns</p></div>
+      <div class="card"><span class="label" style="color:var(--blue)">4</span><p><b>Expression</b><br>index a function</p></div>
+    </div>
+    <div class="gap"></div>
+    <div class="cols c4">
+      <div class="card"><span class="label" style="color:var(--green)">5</span><p><b>Partial</b><br>index a slice</p></div>
+      <div class="card"><span class="label" style="color:var(--green)">6</span><p><b>Covering</b><br>skip the table</p></div>
+      <div class="card"><span class="label" style="color:var(--green)">7</span><p><b>BRIN</b><br>tiny, time-ordered</p></div>
+      <div class="card red"><span class="label">Price</span><p><b>Cost</b><br>space + writes</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide section">
+  <div class="body">
+    <p class="kicker">Part 1</p>
+    <h2>Selectivity<br>when does an index help?</h2>
+    <p class="lead">Steps 1–3 in the lab guide</p>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <p class="kicker">Step 1</p>
+  <h2>How many rows does each filter keep?</h2>
+  <div class="body cols wide-left">
+    <table>
+      <tr><th>Filter</th><th class="num">Rows</th><th class="num">% of table</th></tr>
+      <tr class="good"><td><code>payer = 'u1000@bank'</code></td><td class="num">103</td><td class="num">0.01%</td></tr>
+      <tr><td><code>status = 'PENDING'</code></td><td class="num">9,979</td><td class="num">1%</td></tr>
+      <tr><td><code>payer = 'u42@bank'</code></td><td class="num">10,216</td><td class="num">1%</td></tr>
+      <tr><td><code>status = 'FAILED'</code></td><td class="num">48,998</td><td class="num">4.9%</td></tr>
+      <tr class="bad"><td><code>status = 'SUCCESS'</code></td><td class="num">941,023</td><td class="num">94.1%</td></tr>
+    </table>
+    <div>
+      <div class="card blue"><span class="label">Selectivity</span><p>The fraction of rows a filter <b>keeps</b>.</p><p>Small fraction = <b>selective</b>.</p></div>
+      <div class="gap"></div>
+      <div class="rule step">An index pays off when it lets PostgreSQL <b>skip most pages</b>.</div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Write this table on the whiteboard. Every decision today refers back to it.</p></aside>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <p class="kicker">Step 2 · Predict</p>
+  <h2>Same index, two customers</h2>
+  <div class="body">
+    <pre class="sql">CREATE INDEX idx_txn_payer ON transactions (payer_account);
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT * FROM transactions WHERE payer_account = 'u1000@bank';   -- 103 rows
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT * FROM transactions WHERE payer_account = 'u42@bank';     -- 10,216 rows</pre>
+    <div class="gap"></div>
+    <div class="predict">The table has 12,606 pages. How many will each query visit?</div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <p class="kicker">Step 2 · See</p>
+  <h2>10,216 rows live on more than half the pages</h2>
+  <div class="body">
+    <pre class="plan sm"> Bitmap Heap Scan on transactions  (... rows=<mark>103</mark> loops=1)
+   <mark class="green">Heap Blocks: exact=103</mark>
+ Execution Time: 0.154 ms
+
+ Bitmap Heap Scan on transactions  (... rows=<mark>10216</mark> loops=1)
+   <mark class="red">Heap Blocks: exact=7017</mark>
+ Execution Time: 13.020 ms</pre>
+    <div class="gap"></div>
+    <div class="cols step">
+      <div class="stat"><div class="num green">103</div><div class="cap">pages for u1000 (0.8%)</div></div>
+      <div class="stat"><div class="num red">7,017</div><div class="cap">pages for u42 (56%)</div></div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Payments are stored in time order, not by customer. A busy customer's rows are sprinkled across most pages, so the index cannot skip much.</p></aside>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <p class="kicker">See it</p>
+  <h2>Selectivity vs pages touched</h2>
+  <div class="body top sel" data-sel>
+    <div class="presets sim" style="padding:0;background:none;border:none">
+      <button data-k="103">u1000 · 103</button>
+      <button data-k="9979">PENDING · 9,979</button>
+      <button data-k="10216">u42 · 10,216</button>
+      <button data-k="48998">FAILED · 48,998</button>
+      <button data-k="150612">WEB · 150,612</button>
+      <button data-k="941023">SUCCESS · 941,023</button>
+    </div>
+    <input type="range" min="0" max="1000" value="300" data-slider>
+    <div class="bars">
+      <span>Matching rows</span><div></div><span class="val" data-rows>0</span>
+      <span>Index: pages visited</span><div class="track"><div class="fill idx" data-ibar></div></div><span class="val" data-ipages>0</span>
+      <span>Seq Scan: pages</span><div class="track"><div class="fill seq"></div></div><span class="val">12,606</span>
+    </div>
+    <div class="verdict" data-verdict></div>
+  </div>
+  <aside class="notes-src"><p>Rows are scattered randomly over 12,606 pages, so pages visited = 12,606 × (1 − (1 − 1/12,606)^rows). At 10,216 rows that gives about 7,000, matching the real 7,017.</p><p>Click the presets in order. Point out how fast the blue bar fills: 15% of rows (WEB) already touches almost every page.</p></aside>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <p class="kicker">Step 3 · Predict</p>
+  <h2>We index <code>status</code>. Will it be used?</h2>
+  <div class="body">
+    <pre class="sql">CREATE INDEX idx_txn_status ON transactions (status);
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT * FROM transactions WHERE status = 'PENDING';   --  1% of rows
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT * FROM transactions WHERE status = 'SUCCESS';   -- 94% of rows</pre>
+    <div class="gap"></div>
+    <div class="predict">Index Scan or Seq Scan, for each one?</div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <p class="kicker">Step 3 · See</p>
+  <h2>The planner ignores the index for SUCCESS</h2>
+  <div class="body">
+    <pre class="plan sm"> <mark class="green">Index Scan</mark> using idx_txn_status on transactions  (... rows=9979 loops=1)
+   Index Cond: (status = 'PENDING'::text)
+
+ <mark class="red">Seq Scan</mark> on transactions  (... rows=941023 loops=1)
+   Filter: (status = 'SUCCESS'::text)
+   Rows Removed by Filter: 58977
+   Buffers: shared hit=12606</pre>
+    <div class="gap"></div>
+    <div class="tip step">This is <b>correct</b>, not a bug. To return 94% of the rows you must read every page anyway.</div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <p class="kicker">Step 3 · Prove it</p>
+  <h2>Force the index: more work, no gain</h2>
+  <div class="body cols wide-left">
+    <div>
+      <pre class="sql sm">BEGIN;
+SET LOCAL enable_seqscan = off;   -- learning only!
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT * FROM transactions
+WHERE status = 'SUCCESS';
+ROLLBACK;</pre>
+      <div class="gap"></div>
+      <pre class="plan xs"> Bitmap Heap Scan on transactions  (... rows=941023)
+   Heap Blocks: exact=12606
+   Buffers: shared hit=12609 <mark class="red">read=792</mark></pre>
+    </div>
+    <div>
+      <table>
+        <tr><th></th><th class="num">Pages</th></tr>
+        <tr><td>Seq Scan</td><td class="num">12,606</td></tr>
+        <tr class="bad"><td>Forced index</td><td class="num">12,606 + 792</td></tr>
+      </table>
+      <div class="gap"></div>
+      <div class="analogy step"><div class="icon">📖</div><p>Using a book's index to find every page containing <b>"the"</b>: slower than just reading the book.</p></div>
+    </div>
+  </div>
+  <aside class="notes-src"><p><code>SET LOCAL</code> only lasts until ROLLBACK. Never set enable_seqscan=off in real applications; it is a diagnostic switch.</p></aside>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <p class="kicker">Rule</p>
+  <h2>Selectivity decides the scan</h2>
+  <div class="body">
+    <div class="flow">
+      <div class="box green"><b>Very few rows</b>Index Scan</div>
+      <div class="arrow">→</div>
+      <div class="box blue"><b>Some rows</b>Bitmap Scan</div>
+      <div class="arrow">→</div>
+      <div class="box red"><b>Most rows</b>Seq Scan</div>
+    </div>
+    <div class="gap"></div><div class="gap"></div>
+    <div class="rule">An index is only as good as the rows it lets you <b>avoid</b>. "The index wasn't used" usually means "the index wouldn't help".</div>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide section">
+  <div class="body">
+    <p class="kicker">Part 2</p>
+    <h2>Composite indexes<br>column order matters</h2>
+    <p class="lead">Steps 4–5 in the lab guide</p>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <p class="kicker">Step 4 · Before</p>
+  <h2>"Latest 10 payments": fetch 10,216, sort, keep 10</h2>
+  <div class="body cols wide-right">
+    <pre class="sql sm">SELECT txn_id, txn_ts,
+       amount, status
+FROM transactions
+WHERE payer_account = 'u42@bank'
+ORDER BY txn_ts DESC
+LIMIT 10;</pre>
+    <pre class="plan xs"> Limit  (... rows=10 loops=1)
+   ->  <mark class="red">Sort</mark>  (... rows=10 loops=1)
+         Sort Key: txn_ts DESC
+         Sort Method: top-N heapsort
+         ->  Bitmap Heap Scan on transactions
+               (... <mark>rows=10216</mark> loops=1)
+               Heap Blocks: exact=7017
+ <mark>Execution Time: 5.977 ms</mark></pre>
+  </div>
+  <aside class="notes-src"><p>Only the single-column payer index exists. PostgreSQL must find all 10,216 rows, then sort them, just to show 10.</p></aside>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <p class="kicker">Step 4 · After</p>
+  <h2>Index on (who, when): no Sort, stop after 10</h2>
+  <div class="body">
+    <pre class="sql sm">CREATE INDEX idx_txn_payer_ts ON transactions (payer_account, txn_ts DESC);</pre>
+    <div class="gap"></div>
+    <pre class="plan sm"> Limit  (... actual time=0.021..0.028 rows=10 loops=1)
+   ->  <mark class="green">Index Scan using idx_txn_payer_ts</mark> on transactions  (... rows=10 loops=1)
+         Index Cond: (payer_account = 'u42@bank'::text)
+         <mark>Buffers: shared hit=10 read=3</mark>
+ Execution Time: 0.035 ms</pre>
+    <div class="gap"></div>
+    <div class="cols c3 step">
+      <div class="stat"><div class="num green">0</div><div class="cap">Sort nodes</div></div>
+      <div class="stat"><div class="num green">13</div><div class="cap">pages (was 7,029)</div></div>
+      <div class="stat"><div class="num green">~170×</div><div class="cap">faster</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <p class="kicker">Analogy</p>
+  <h2>A composite index is a phone directory</h2>
+  <div class="body cols">
+    <table class="dir">
+      <tr><th>payer_account</th><th>txn_ts DESC</th></tr>
+      <tr><td>u1000@bank</td><td>2026-03-30 …</td></tr>
+      <tr><td>u1000@bank</td><td>2026-03-28 …</td></tr>
+      <tr><td>u1000@bank</td><td>…</td></tr>
+      <tr class="me"><td>u42@bank</td><td>2026-03-31 23:5…</td></tr>
+      <tr class="me"><td>u42@bank</td><td>2026-03-31 23:4…</td></tr>
+      <tr class="me"><td>u42@bank</td><td>… newest first</td></tr>
+      <tr><td>u43@bank</td><td>…</td></tr>
+    </table>
+    <div>
+      <div class="analogy"><div class="icon">📒</div><p>Sorted by <b>surname</b>, then <b>first name</b>. Find "Kumar", and the first names are already in order.</p></div>
+      <div class="gap"></div>
+      <p>Jump to <code>u42@bank</code>, read the first 10 entries, <b>stop</b>.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <p class="kicker">Step 5 · Predict</p>
+  <h2>What if we swap the columns?</h2>
+  <div class="body">
+    <pre class="sql sm">BEGIN;
+DROP INDEX idx_txn_payer_ts;
+DROP INDEX idx_txn_payer;
+CREATE INDEX idx_txn_ts_payer ON transactions (txn_ts DESC, payer_account);
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT txn_id, txn_ts, amount, status FROM transactions
+WHERE payer_account = 'u1000@bank' ORDER BY txn_ts DESC LIMIT 10;
+ROLLBACK;</pre>
+    <div class="gap"></div>
+    <div class="predict">A directory sorted by <b>first name</b>, then surname. How fast can you find every "Kumar"?</div>
+  </div>
+  <aside class="notes-src"><p>DROP and CREATE INDEX work inside a transaction. ROLLBACK brings back the good indexes. A safe way to experiment.</p></aside>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <p class="kicker">Step 5 · See</p>
+  <h2>Wrong order: 50× more pages</h2>
+  <div class="body">
+    <pre class="plan sm"> Limit  (... actual time=0.055..3.606 rows=10 loops=1)
+   ->  Index Scan using idx_txn_ts_payer on transactions  (... rows=10 loops=1)
+         Index Cond: (payer_account = 'u1000@bank'::text)
+         <mark class="red">Buffers: shared hit=10 read=651</mark></pre>
+    <div class="gap"></div>
+    <table>
+      <tr><th>Index</th><th class="num">Pages</th><th class="num">Time</th></tr>
+      <tr class="good"><td><code>(payer_account, txn_ts DESC)</code></td><td class="num">13</td><td class="num">~0.03 ms</td></tr>
+      <tr class="bad"><td><code>(txn_ts DESC, payer_account)</code></td><td class="num">661</td><td class="num">~3.6 ms</td></tr>
+    </table>
+    <div class="gap"></div>
+    <p class="step">Walks the index newest → oldest, checking every entry's payer until it finds 10 for u1000.</p>
+  </div>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <p class="kicker">Rule</p>
+  <h2>Equality first, then range or ORDER BY</h2>
+  <div class="body">
+    <table>
+      <tr><th>Query pattern</th><th>Index</th></tr>
+      <tr><td><code>WHERE a = ? ORDER BY b LIMIT n</code></td><td><code>(a, b)</code></td></tr>
+      <tr><td><code>WHERE a = ? AND b &gt;= ?</code></td><td><code>(a, b)</code></td></tr>
+      <tr><td><code>WHERE b &gt;= ?</code> only</td><td><code>(b)</code>: <code>(a, b)</code> won't help much</td></tr>
+    </table>
+    <div class="gap"></div>
+    <div class="rule step">Put the column compared with <code>=</code> <b>first</b>. Then the index does the sorting for you.</div>
+  </div>
+</section>
+
+<!-- 20 -->
+<section class="slide section">
+  <div class="body">
+    <p class="kicker">Part 3</p>
+    <h2>Keep the column bare<br>SARGable filters</h2>
+    <p class="lead">Steps 6–7 in the lab guide</p>
+  </div>
+</section>
+
+<!-- 21 -->
+<section class="slide">
+  <p class="kicker">Step 6 · Predict</p>
+  <h2>Payments on 15 March: two ways to ask</h2>
+  <div class="body">
+    <pre class="sql sm">CREATE INDEX idx_txn_ts ON transactions (txn_ts);
+
+-- A: cast the column
+SELECT count(*) FROM transactions
+WHERE txn_ts::date = DATE '2026-03-15';
+
+-- B: half-open range on the bare column
+SELECT count(*) FROM transactions
+WHERE txn_ts >= TIMESTAMP '2026-03-15'
+  AND txn_ts <  TIMESTAMP '2026-03-16';</pre>
+    <div class="gap"></div>
+    <div class="predict">Same answer. Same plan?</div>
+  </div>
+</section>
+
+<!-- 22 -->
+<section class="slide">
+  <p class="kicker">Step 6 · See</p>
+  <h2>Wrapping the column hides it from the index</h2>
+  <div class="body">
+    <pre class="plan xs"> A:  ->  <mark class="red">Seq Scan</mark> on transactions  (... rows=11186 loops=1)
+           Filter: ((txn_ts)::date = '2026-03-15'::date)
+           Rows Removed by Filter: 988814
+           <mark class="red">Buffers: shared hit=12606</mark>
+     Execution Time: 55.187 ms
+
+ B:  ->  <mark class="green">Index Only Scan</mark> using idx_txn_ts on transactions  (... rows=11186 loops=1)
+           Index Cond: ((txn_ts >= '2026-03-15 00:00:00') AND (txn_ts < '2026-03-16 00:00:00'))
+           <mark class="green">Buffers: shared hit=1 read=33</mark>
+     Execution Time: 1.085 ms</pre>
+    <div class="gap"></div>
+    <div class="cols c3 step">
+      <div class="stat"><div class="num">11,186</div><div class="cap">rows, both ways</div></div>
+      <div class="stat"><div class="num red">12,606</div><div class="cap">pages with cast</div></div>
+      <div class="stat"><div class="num green">34</div><div class="cap">pages with range</div></div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>The index stores txn_ts values. The query asks about txn_ts::date values, which are not in the index. Rule of thumb: keep the column alone on one side of the comparison.</p></aside>
+</section>
+
+<!-- 23 -->
+<section class="slide">
+  <p class="kicker">Why half-open?</p>
+  <h2><code>&gt;= start</code> AND <code>&lt; next day</code></h2>
+  <div class="body cols wide-left">
+    <table class="tl">
+      <tr><th>txn_ts</th><th>&gt;= 15 Mar?</th><th>&lt; 16 Mar?</th><th>Kept</th></tr>
+      <tr><td>2026-03-14 23:59:59</td><td>No</td><td>Yes</td><td class="red">No</td></tr>
+      <tr><td>2026-03-15 00:00:00</td><td>Yes</td><td>Yes</td><td class="green">Yes</td></tr>
+      <tr><td>2026-03-15 23:59:59</td><td>Yes</td><td>Yes</td><td class="green">Yes</td></tr>
+      <tr><td>2026-03-16 00:00:00</td><td>Yes</td><td>No</td><td class="red">No</td></tr>
+    </table>
+    <div>
+      <div class="warn"><code>BETWEEN '…15' AND '…15 23:59:59'</code> misses 23:59:59.5</div>
+      <div class="gap"></div>
+      <div class="rule step">Keep the indexed column <b>bare</b>. Move the maths to the other side.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 24 -->
+<section class="slide">
+  <p class="kicker">Step 7</p>
+  <h2>Expression index: search by name, any case</h2>
+  <div class="body cols">
+    <div>
+      <pre class="sql xs">CREATE INDEX idx_acc_name ON accounts (holder_name);
+
+SELECT account_id, holder_name, city
+FROM accounts
+WHERE lower(holder_name) = 'ravi kumar';</pre>
+      <div class="gap"></div>
+      <pre class="plan xs"> <mark class="red">Seq Scan</mark> on accounts  (... rows=25)
+   Filter: (lower(holder_name) = 'ravi kumar')
+   Rows Removed by Filter: 9975</pre>
+    </div>
+    <div class="step">
+      <pre class="sql xs">CREATE INDEX idx_acc_name_lower
+  ON accounts (lower(holder_name));</pre>
+      <div class="gap"></div>
+      <pre class="plan xs"> Bitmap Heap Scan on accounts  (... rows=25)
+   ->  <mark class="green">Bitmap Index Scan on idx_acc_name_lower</mark>
+         Index Cond: (lower(holder_name) = 'ravi kumar')</pre>
+      <div class="gap"></div>
+      <div class="rule">Must use a function? Index <b>exactly that expression</b>.</div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>The plain index stores "Ravi Kumar". The query compares "ravi kumar". Different values, so the index is useless until we index lower(holder_name) itself.</p></aside>
+</section>
+
+<!-- 25 -->
+<section class="slide section">
+  <div class="body">
+    <p class="kicker">Part 4</p>
+    <h2>Partial &amp; covering<br>index less, read less</h2>
+    <p class="lead">Steps 8–10 in the lab guide</p>
+  </div>
+</section>
+
+<!-- 26 -->
+<section class="slide">
+  <p class="kicker">Step 8</p>
+  <h2>Partial index: only the failed payments</h2>
+  <div class="body cols wide-left">
+    <div>
+      <pre class="sql xs">CREATE INDEX idx_txn_failed_ts ON transactions (txn_ts DESC)
+WHERE status = 'FAILED';
+
+SELECT txn_id, payer_account, amount, txn_ts
+FROM transactions
+WHERE status = 'FAILED'
+ORDER BY txn_ts DESC LIMIT 20;</pre>
+      <div class="gap"></div>
+      <pre class="plan xs"> Limit  (... rows=20 loops=1)
+   ->  <mark class="green">Index Scan using idx_txn_failed_ts</mark>
+         Buffers: shared hit=5 read=2</pre>
+    </div>
+    <div>
+      <div class="sizebar">
+        <span>idx_txn_ts (all rows)</span><div class="b" style="background:var(--red);width:100%"></div><span>21 MB</span>
+        <span>idx_txn_failed_ts</span><div class="b" style="background:var(--green);width:5%"></div><span>1 MB</span>
+      </div>
+      <div class="gap"></div>
+      <div class="analogy step"><div class="icon">📝</div><p>A separate notebook listing <b>only</b> the failed payments.</p></div>
+      <div class="gap"></div>
+      <div class="warn step">The query's <code>WHERE</code> must match the index's <code>WHERE</code>.</div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Before the partial index, the plan walked idx_txn_ts backwards and skipped 298 SUCCESS rows. The partial index does the same job with no skipping, 20× smaller, and cheaper to maintain.</p></aside>
+</section>
+
+<!-- 27 -->
+<section class="slide">
+  <p class="kicker">Step 9</p>
+  <h2>Covering index: the answer is in the index</h2>
+  <div class="body">
+    <pre class="sql xs">SELECT txn_ts, amount FROM transactions
+WHERE payer_account = 'u1000@bank' ORDER BY txn_ts DESC;</pre>
+    <div class="gap"></div>
+    <div class="cols">
+      <div>
+        <p class="code-label">Before: amount not in any index</p>
+        <pre class="plan xs"> <mark class="red">Sort</mark>  (... rows=103)
+   ->  Bitmap Heap Scan on transactions
+         Heap Blocks: exact=103</pre>
+      </div>
+      <div class="step">
+        <p class="code-label">After: INCLUDE (amount)</p>
+        <pre class="plan xs"> <mark class="green">Index Only Scan</mark> using idx_txn_payer_ts_amt
+   Index Cond: (payer_account = 'u1000@bank')
+   <mark class="green">Heap Fetches: 0</mark>
+   Buffers: shared hit=1 read=3</pre>
+      </div>
+    </div>
+    <div class="gap"></div>
+    <pre class="sql xs step">CREATE INDEX idx_txn_payer_ts_amt ON transactions (payer_account, txn_ts DESC) INCLUDE (amount);</pre>
+  </div>
+  <aside class="notes-src"><p>INCLUDE columns are passengers: stored in the index, not used for searching. 4 pages instead of 106, and no sort.</p></aside>
+</section>
+
+<!-- 28 -->
+<section class="slide">
+  <p class="kicker">Step 10</p>
+  <h2>Heap Fetches and the visibility map</h2>
+  <div class="body cols">
+    <div>
+      <ul>
+        <li>The index can't tell if a row is <b>visible</b></li>
+        <li>The <b>visibility map</b> flags pages where every row is visible</li>
+        <li>UPDATE / DELETE clear the flag; <code>VACUUM</code> sets it again</li>
+      </ul>
+    </div>
+    <div>
+      <table>
+        <tr><th>After…</th><th class="num">Heap Fetches</th><th class="num">Pages</th></tr>
+        <tr class="bad step"><td>UPDATE + ROLLBACK</td><td class="num">206</td><td class="num">211</td></tr>
+        <tr class="good step"><td>VACUUM</td><td class="num">0</td><td class="num">5</td></tr>
+      </table>
+      <div class="gap"></div>
+      <div class="rule step">Index Only Scans love <b>vacuumed</b> tables.</div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>206 = 103 rows × 2 versions: the aborted update left a second index entry per row. Autovacuum normally handles this in production.</p></aside>
+</section>
+
+<!-- 29 -->
+<section class="slide section">
+  <div class="body">
+    <p class="kicker">Part 5</p>
+    <h2>BRIN<br>a 24 kB index</h2>
+    <p class="lead">Step 11 in the lab guide</p>
+  </div>
+</section>
+
+<!-- 30 -->
+<section class="slide">
+  <p class="kicker">Step 11 · Idea</p>
+  <h2>BRIN stores min/max per block of pages</h2>
+  <div class="body">
+    <div class="brin-grid">
+      <div><b>pages 1–128</b>1 Jan</div>
+      <div><b>…</b>…</div>
+      <div><b>…</b>13 Mar</div>
+      <div><b>…</b>14 Mar</div>
+      <div class="hit step"><b>block A</b>14–15 Mar</div>
+      <div class="hit step"><b>block B</b>15 Mar</div>
+      <div class="hit step"><b>block C</b>15–16 Mar</div>
+      <div><b>…</b>31 Mar</div>
+    </div>
+    <div class="gap"></div>
+    <div class="cols">
+      <div class="analogy"><div class="icon">🗂️</div><p>Labels on <b>archive boxes</b>: "Jan 1–3". Open only the boxes whose label overlaps your date.</p></div>
+      <table>
+        <tr><th>Column</th><th class="num">Correlation</th></tr>
+        <tr class="good"><td><code>txn_ts</code></td><td class="num">1 (time order)</td></tr>
+        <tr class="bad"><td><code>payer_account</code></td><td class="num">≈ 0 (random)</td></tr>
+      </table>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Correlation = how well the column's order matches the physical row order. BRIN only works near 1. Payments are inserted in time order, so txn_ts is perfect.</p></aside>
+</section>
+
+<!-- 31 -->
+<section class="slide">
+  <p class="kicker">Step 11 · See</p>
+  <h2>900× smaller, still skips 98% of the table</h2>
+  <div class="body cols wide-right">
+    <div>
+      <div class="sizebar" style="grid-template-columns:140px 1fr 80px">
+        <span>B-tree</span><div class="b" style="background:var(--blue);width:100%"></div><span>21 MB</span>
+        <span>BRIN</span><div class="b" style="background:var(--green);width:1%"></div><span>24 kB</span>
+      </div>
+      <div class="gap"></div>
+      <div class="warn step">Lossy: reads whole page ranges, rechecks rows.</div>
+    </div>
+    <pre class="plan xs"> Bitmap Heap Scan on transactions  (... rows=11186)
+   <mark>Rows Removed by Index Recheck: 9129</mark>
+   <mark>Heap Blocks: lossy=256</mark>
+   ->  Bitmap Index Scan on idx_txn_ts_brin
+         Index Cond: (txn_ts >= ... AND txn_ts < ...)
+ Execution Time: 1.905 ms</pre>
+  </div>
+  <aside class="notes-src"><p>256 pages vs 12,606 for a Seq Scan. The B-tree is more precise (34 pages) but 900× bigger. BRIN suits huge append-only tables: logs, events, payments by time.</p></aside>
+</section>
+
+<!-- 32 -->
+<section class="slide section">
+  <div class="body">
+    <p class="kicker">Part 6</p>
+    <h2>The price<br>indexes are not free</h2>
+    <p class="lead">Step 12 in the lab guide</p>
+  </div>
+</section>
+
+<!-- 33 -->
+<section class="slide">
+  <p class="kicker">Step 12 · Space</p>
+  <h2>Our indexes are bigger than the table</h2>
+  <div class="body cols wide-right">
+    <div>
+      <div class="sizebar" style="grid-template-columns:120px 1fr 90px">
+        <span>Table</span><div class="b" style="background:var(--blue);width:68%"></div><span>98 MB</span>
+        <span>Indexes</span><div class="b" style="background:var(--red);width:100%"></div><span>145 MB</span>
+      </div>
+      <div class="gap"></div>
+      <div class="warn step">3 indexes start with <code>payer_account</code>: overlap!</div>
+    </div>
+    <table class="small">
+      <tr><th>Index</th><th class="num">Size</th></tr>
+      <tr><td>idx_txn_payer_ts_amt</td><td class="num">49 MB</td></tr>
+      <tr><td>idx_txn_payer_ts</td><td class="num">39 MB</td></tr>
+      <tr><td>transactions_pkey</td><td class="num">21 MB</td></tr>
+      <tr><td>idx_txn_ts</td><td class="num">21 MB</td></tr>
+      <tr><td>idx_txn_payer</td><td class="num">7 MB</td></tr>
+      <tr><td>idx_txn_status</td><td class="num">7 MB</td></tr>
+      <tr><td>idx_txn_failed_ts</td><td class="num">1 MB</td></tr>
+      <tr><td>idx_txn_ts_brin</td><td class="num">24 kB</td></tr>
+    </table>
+  </div>
+  <aside class="notes-src"><p>pg_stat_user_indexes.idx_scan shows how often each index is used. An index unused for weeks is a candidate to drop. Here idx_txn_payer is fully covered by the composite indexes.</p></aside>
+</section>
+
+<!-- 34 -->
+<section class="slide">
+  <p class="kicker">Step 12 · Writes</p>
+  <h2>Every INSERT updates every index</h2>
+  <div class="body">
+    <pre class="sql xs">CREATE TABLE load_plain   (LIKE transactions);                     -- no indexes
+CREATE TABLE load_indexed (LIKE transactions INCLUDING INDEXES);   -- same 8 indexes
+EXPLAIN (ANALYZE, BUFFERS) INSERT INTO load_plain   SELECT * FROM transactions WHERE txn_id &lt;= 50000;
+EXPLAIN (ANALYZE, BUFFERS) INSERT INTO load_indexed SELECT * FROM transactions WHERE txn_id &lt;= 50000;</pre>
+    <div class="gap"></div>
+    <table>
+      <tr><th>Insert 50,000 rows into…</th><th class="num">Time</th><th class="num">Pages dirtied</th><th class="num">Size</th></tr>
+      <tr class="good"><td>No indexes</td><td class="num">~21 ms</td><td class="num">632</td><td class="num">5 MB</td></tr>
+      <tr class="bad"><td>8 indexes</td><td class="num">~355 ms</td><td class="num">1,818</td><td class="num">14 MB</td></tr>
+    </table>
+    <div class="gap"></div>
+    <div class="rule step">Every index speeds up some reads and slows <b>every</b> write. Keep only those that earn their place.</div>
+  </div>
+</section>
+
+<!-- 35 -->
+<section class="slide">
+  <p class="kicker">Summary</p>
+  <h2>Which index for which question?</h2>
+  <div class="body small">
+    <table>
+      <tr><th>Question</th><th>Index</th></tr>
+      <tr><td>Few rows by value</td><td>B-tree <code>(payer_account)</code></td></tr>
+      <tr><td>Filter keeps most rows</td><td><b>None</b>: Seq Scan wins</td></tr>
+      <tr><td><code>WHERE a = ? ORDER BY b LIMIT n</code></td><td>Composite <code>(a, b)</code></td></tr>
+      <tr><td>Function on a column</td><td>Rewrite bare, or expression index</td></tr>
+      <tr><td>Always the same small slice</td><td>Partial <code>WHERE status = 'FAILED'</code></td></tr>
+      <tr><td>Few columns, skip the table</td><td>Covering <code>INCLUDE (amount)</code></td></tr>
+      <tr><td>Huge, time-ordered table</td><td>BRIN <code>(txn_ts)</code></td></tr>
+    </table>
+  </div>
+  <aside class="notes-src"><p>Go back to the four business requests from slide 2 and ask learners which row answers each one.</p></aside>
+</section>
+
+<!-- 36 -->
+<section class="slide">
+  <p class="kicker">Cheat sheet</p>
+  <h2>Index design checklist</h2>
+  <div class="body">
+    <ol>
+      <li class="step">Which <b>query</b> needs it? No query → no index.</li>
+      <li class="step">How <b>selective</b> is the filter?</li>
+      <li class="step"><b>Equality</b> columns first, then range / <code>ORDER BY</code>.</li>
+      <li class="step">Is the column <b>bare</b> in the <code>WHERE</code>?</li>
+      <li class="step">Did the plan change, and did <b>pages go down</b>?</li>
+      <li class="step">Can an <b>existing</b> index be extended instead?</li>
+    </ol>
+  </div>
+</section>
+
+<!-- 37 -->
+<section class="slide">
+  <p class="kicker">Avoid these</p>
+  <h2>Common mistakes</h2>
+  <div class="body cols">
+    <ul>
+      <li>Indexing every <code>WHERE</code> column</li>
+      <li>Indexing a 94% value</li>
+      <li>Composite columns in the wrong order</li>
+      <li><code>col::date = …</code>, <code>lower(col) = …</code> with no matching index</li>
+    </ul>
+    <ul>
+      <li>Partial index <code>WHERE</code> not matching the query</li>
+      <li>Forgetting the write cost</li>
+      <li>Three overlapping indexes "just in case"</li>
+    </ul>
+  </div>
+</section>
+
+<!-- 38 -->
+<section class="slide">
+  <p class="kicker">Quick quiz</p>
+  <h2>Check yourself</h2>
+  <div class="body small">
+    <table>
+      <tr><th>Question</th><th>Answer</th></tr>
+      <tr><td>1. Filter keeps 94% of rows, index exists. Which scan?</td><td class="step">Seq Scan</td></tr>
+      <tr><td>2. <code>WHERE payer = ? ORDER BY txn_ts DESC LIMIT 10</code>: which index?</td><td class="step"><code>(payer_account, txn_ts DESC)</code></td></tr>
+      <tr><td>3. Why can't <code>idx(txn_ts)</code> help <code>txn_ts::date = …</code>?</td><td class="step">Index holds txn_ts, not txn_ts::date</td></tr>
+      <tr><td>4. <code>Heap Fetches: 0</code> means?</td><td class="step">Answer came only from the index</td></tr>
+      <tr><td>5. Why not always BRIN?</td><td class="step">Needs time-ordered data; lossy</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- 39 -->
+<section class="slide">
+  <p class="kicker">Your turn</p>
+  <h2>Try it yourself</h2>
+  <div class="body small">
+    <ul>
+      <li><b>T1.</b> "Top 5 <b>biggest</b> payments of <code>u1000@bank</code>": design an index with <b>no Sort</b> in the plan.</li>
+      <li><b>T2.</b> Is <code>channel = 'WEB'</code> (15%) a good index? Count the table pages it reads.</li>
+      <li><b>T3.</b> Rewrite <code>date_trunc('month', txn_ts) = '2026-02-01'</code> to use <code>idx_txn_ts</code>.</li>
+      <li><b>T4.</b> Partial index for <code>status = 'PENDING' AND payee_account IS NULL</code>. How big is it?</li>
+    </ul>
+  </div>
+  <aside class="notes-src"><p>Answers in trainer/lab-02-answers.md. T2 is the surprise: 15% of rows still touches all 12,606 pages. T4 shows a big misestimate (22 vs 1,982) that sets up Lab 04.</p></aside>
+</section>
+
+<!-- 40 -->
+<section class="slide title">
+  <div class="body">
+    <p class="kicker">Lab 02 · Recap</p>
+    <h2 style="font-size:52px">Selectivity decides <i>whether</i> an index helps.<br>Design decides <i>how much</i>.</h2>
+    <div class="gap"></div>
+    <p class="lead">7,029 → 13 pages · 12,606 → 34 pages · 21 MB → 24 kB</p>
+    <div class="gap"></div>
+    <p class="lead"><b>Next: Lab 03</b>, Joins: Nested Loop, Hash Join, Merge Join.</p>
+  </div>
+</section>
+
+</div>
+
+<script src="assets/deck.js"></script>
+<script>
+/* Selectivity slider (slide 8): rows spread randomly over 12,606 pages */
+(function () {
+  const root = document.querySelector('[data-sel]');
+  const N = 12606, TOTAL = 1000000;
+  const slider = root.querySelector('[data-slider]');
+  const rowsEl = root.querySelector('[data-rows]'), pagesEl = root.querySelector('[data-ipages]');
+  const bar = root.querySelector('[data-ibar]'), verdict = root.querySelector('[data-verdict]');
+  // slider 0..1000 maps to 10 .. 1,000,000 rows on a log scale
+  const toRows = v => Math.round(Math.pow(10, 1 + v / 1000 * 5));
+  const toSlider = k => Math.round((Math.log10(k) - 1) / 5 * 1000);
+  function show(k) {
+    const pages = Math.min(N, Math.round(N * (1 - Math.pow(1 - 1 / N, k))));
+    const share = pages / N;
+    rowsEl.textContent = k.toLocaleString() + ' (' + (100 * k / TOTAL).toFixed(k < 1000 ? 3 : 1) + '%)';
+    pagesEl.textContent = pages.toLocaleString();
+    bar.style.width = (share * 100).toFixed(1) + '%';
+    if (share < 0.1) { verdict.className = 'verdict good'; verdict.textContent = 'Index skips most pages: Index or Bitmap Scan'; }
+    else if (share < 0.9) { verdict.className = 'verdict mid'; verdict.textContent = 'Index visits ' + Math.round(share * 100) + '% of pages: a close call, the planner decides by cost'; }
+    else { verdict.className = 'verdict bad'; verdict.textContent = 'Index visits almost every page: it saves nothing, Seq Scan is as good'; }
+  }
+  slider.addEventListener('input', () => show(toRows(+slider.value)));
+  root.querySelectorAll('[data-k]').forEach(b => b.onclick = () => {
+    const k = +b.dataset.k; slider.value = toSlider(k); show(k);
+  });
+  show(103); slider.value = toSlider(103);
+})();
+</script>
+</body>
+</html>

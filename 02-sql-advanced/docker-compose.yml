@@ -1,0 +1,26 @@
+# SQL Performance Workshop — PostgreSQL 17 for all labs
+#
+#   docker compose up -d          start
+#   docker compose stop           stop (data is kept)
+#
+# The course folder is mounted read-only at /workshop, so you can run the
+# lab files even without psql installed on your laptop:
+#   docker exec -it -w /workshop advanced-sql-pg psql -U labuser -d paylab
+
+services:
+  postgres:
+    image: postgres:17
+    container_name: advanced-sql-pg
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: TrainingOnly_ChangeMe123
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./:/workshop:ro
+
+volumes:
+  pgdata:
+    name: advanced-sql-pgdata

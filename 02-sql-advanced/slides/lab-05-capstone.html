@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab 05 · Capstone: The Slow Dashboard</title>
+<link rel="stylesheet" href="assets/deck.css">
+<style>
+  .dash { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .panel { border: 2px solid var(--line); border-radius: 14px; padding: 16px 20px; background: var(--soft); position: relative; min-height: 150px; }
+  .panel h3 { font-size: 22px; margin: 0 0 6px; }
+  .panel .q { font-size: 15px; font-weight: 800; letter-spacing: .12em; color: var(--muted); }
+  .panel .spin { position: absolute; right: 18px; top: 16px; font-size: 18px; font-weight: 700; color: var(--red); font-family: var(--mono); }
+  .panel .spin.ok { color: var(--green); }
+  .panel .ghost { height: 12px; border-radius: 6px; background: #dfe6ef; margin: 9px 0; }
+  .panel.empty .msg { font-size: 22px; color: var(--muted); margin-top: 18px; text-align: center; font-style: italic; }
+  .vs { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; }
+  .listbox { font-family: var(--mono); font-size: 17px; line-height: 1.5; background: var(--soft); border: 2px solid var(--line); border-radius: 12px; padding: 12px 16px; }
+  .listbox .z { color: var(--green); font-weight: 700; }
+  .listbox.bad { border-color: var(--red); background: var(--red-soft); }
+  .listbox.good { border-color: var(--green); background: var(--green-soft); }
+  .big-arrow { font-size: 60px; color: var(--muted); text-align: center; }
+  .score td { font-size: 21px; }
+  .score td.b { color: var(--red); font-weight: 700; }
+  .score td.a { color: var(--green); font-weight: 700; }
+</style>
+</head>
+<body data-deck="Lab 05 · Capstone: The Slow Dashboard">
+<div class="deck">
+
+<!-- 1 -->
+<section class="slide title">
+  <div class="body">
+    <p class="kicker">SQL Performance Workshop · Lab 05 · Capstone</p>
+    <h1>The Slow<br>Dashboard</h1>
+    <p class="lead">Four panels. Four broken queries. Make them <b>fast</b>, make them <b>correct</b>, and <b>prove</b> it.</p>
+  </div>
+  <aside class="notes-src"><p>This lab is team work. Form teams of 2–3. Everything from Labs 01–04 is needed. The trainer does not give answers; hints are in the guide.</p></aside>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <p class="kicker">The mission</p>
+  <h2>The Operations Dashboard</h2>
+  <div class="body">
+    <div class="dash">
+      <div class="panel"><span class="q">Q1</span><h3>Daily summary · 15 Mar</h3><div class="ghost" style="width:80%"></div><div class="ghost" style="width:60%"></div><span class="spin">loading…</span></div>
+      <div class="panel"><span class="q">Q2</span><h3>Grocery merchants to call</h3><div class="ghost" style="width:70%"></div><div class="ghost" style="width:85%"></div><span class="spin">loading… 11 s</span></div>
+      <div class="panel empty"><span class="q">Q3</span><h3>Dormant merchants</h3><div class="msg">No merchants found 🎉 ?</div><span class="spin">5 s</span></div>
+      <div class="panel"><span class="q">Q4</span><h3>Customer u42@bank · page 251</h3><div class="ghost" style="width:75%"></div><div class="ghost" style="width:55%"></div><span class="spin">loading…</span></div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Tell the story: the head of operations opens this every morning. It takes over 15 seconds. And sales says the Dormant merchants panel is lying.</p></aside>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <p class="kicker">The complaint</p>
+  <h2>"Slow, and I don't trust it"</h2>
+  <div class="body">
+    <div class="cols">
+      <div class="card red"><span class="label">Head of operations</span><p>"The dashboard takes <b>over 15 seconds</b> to open."</p></div>
+      <div class="card amber"><span class="label">Sales team</span><p>"The <b>Dormant merchants</b> panel is empty. We know some merchants never got paid."</p></div>
+    </div>
+    <div class="gap"></div><div class="gap"></div>
+    <div class="rule step">Your job: every panel <b>fast</b> and <b>correct</b>, with <b>proof</b> for both.</div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <p class="kicker">Your toolbox</p>
+  <h2>Everything from Labs 01–04</h2>
+  <div class="body">
+    <table>
+      <tr><th>Skill</th><th>From</th></tr>
+      <tr><td>Read plans, count <b>pages</b> and <b>loops</b></td><td>Lab 01</td></tr>
+      <tr><td>Right index · keep columns "bare" · covering indexes</td><td>Lab 02</td></tr>
+      <tr><td>Joins · <code>EXISTS</code> / <code>NOT EXISTS</code> · the <code>NOT IN</code> trap · LEFT JOIN</td><td>Lab 03</td></tr>
+      <tr><td>Group once · keyset pages · <b>prove same answer</b></td><td>Lab 04</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <p class="kicker">Rules of the game</p>
+  <h2>Six rules</h2>
+  <div class="body">
+    <ol>
+      <li class="step"><b>Baseline first.</b> Run all 4 queries before changing anything.</li>
+      <li class="step"><b>One change at a time:</b> an index <i>or</i> a rewrite.</li>
+      <li class="step"><b>Measure</b> with <code>EXPLAIN (ANALYZE, BUFFERS)</code>: ms <i>and</i> pages.</li>
+      <li class="step"><b>Prove the answer</b> with the "same answer?" check (helper H2).</li>
+      <li class="step"><b>A changed answer is a bug</b>, unless you prove the old one was wrong.</li>
+      <li class="step"><b>Write it down</b> on the scorecard. You will present it.</li>
+    </ol>
+  </div>
+  <aside class="notes-src"><p>Rule 5 is the twist of this lab: one panel's old answer IS wrong. Teams must prove it, not just claim it.</p></aside>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <p class="kicker">The method</p>
+  <h2>The fix loop</h2>
+  <div class="body">
+    <div class="flow">
+      <div class="box blue"><b>Measure</b>pages · ms · rows</div>
+      <div class="arrow">→</div>
+      <div class="box"><b>Ask</b>the 5 questions</div>
+      <div class="arrow">→</div>
+      <div class="box amber"><b>Change</b>ONE thing</div>
+      <div class="arrow">→</div>
+      <div class="box blue"><b>Measure</b>again</div>
+      <div class="arrow">→</div>
+      <div class="box green"><b>Prove</b>same answer</div>
+    </div>
+    <div class="gap"></div><div class="gap"></div>
+    <div class="card small">
+      <span class="label">The 5 questions</span>
+      <p>① Most indented node? · ② Seq Scan or index? · ③ Rows thrown away? · ④ Estimate vs actual? · ⑤ Pages and <code>loops</code>?</p>
+    </div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <p class="kicker">Keep score</p>
+  <h2>The scorecard</h2>
+  <div class="body">
+    <table class="small">
+      <tr><th>Query</th><th>Version</th><th>What changed</th><th>Top scan node</th><th class="num">Pages</th><th class="num">ms</th><th class="num">Rows</th><th>Same answer?</th></tr>
+      <tr><td>Q1</td><td>baseline</td><td>—</td><td></td><td></td><td></td><td class="num">3</td><td>—</td></tr>
+      <tr><td>Q1</td><td>v2</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+      <tr><td>Q2</td><td>baseline</td><td>—</td><td></td><td></td><td></td><td class="num">10</td><td>—</td></tr>
+      <tr><td>…</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+    </table>
+    <div class="gap"></div>
+    <div class="tip">Pages = top line <code>Buffers: shared hit + read</code>. Also record the index storage you add (helper H1).</div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <p class="kicker">Part A</p>
+  <h2>Run the baselines</h2>
+  <div class="body cols wide-left">
+    <div>
+      <pre class="sql">\i sql/lab05.sql</pre>
+      <div class="gap"></div>
+      <ul class="small">
+        <li>Runs <code>reset.sql</code> and a <b>60 s</b> safety timeout</li>
+        <li>Runs all 4 panels + their plans</li>
+        <li>Saves today's answers in <code>lab05_q1_old</code> … <code>lab05_q4_old</code></li>
+      </ul>
+    </div>
+    <div>
+      <div class="card green"><span class="label">Checkpoint</span><p>Rows saved:<br><code>q1 3 · q2 10 · q3 0 · q4 20</code></p></div>
+      <div class="gap"></div>
+      <div class="warn small">Timeout message? That's a <b>finding</b>. Write it down.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide section">
+  <div class="body">
+    <p class="kicker">Part B</p>
+    <h2>The four panels<br>what the symptoms say</h2>
+    <p class="lead">Read the symptom. Diagnose before you fix.</p>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <p class="kicker">Q1 · Daily summary</p>
+  <h2>A one-day report reads the whole table</h2>
+  <div class="body">
+    <pre class="sql sm">SELECT channel, count(*) AS payments, sum(amount) AS total_amount,
+       count(*) FILTER (WHERE status = 'FAILED') AS failed
+FROM transactions
+WHERE <mark>txn_ts::date = DATE '2026-03-15'</mark>
+GROUP BY channel ORDER BY channel;</pre>
+    <div class="gap"></div>
+    <pre class="plan sm">   ->  Parallel Seq Scan on transactions  (... rows=3729 loops=3)
+         Filter: ((txn_ts)::date = '2026-03-15'::date)
+         <mark class="red">Rows Removed by Filter: 329605</mark></pre>
+    <div class="gap"></div>
+    <p class="small muted step">Check: APP 6,677 · UPI_QR 2,810 · WEB 1,699 payments</p>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <p class="kicker">Q2 · Grocery merchants to call</p>
+  <h2>Look at <code>loops=</code></h2>
+  <div class="body">
+    <pre class="sql sm">SELECT m.merchant_account, m.merchant_name,
+       <mark>(SELECT coalesce(sum(t.amount), 0) FROM transactions t
+        WHERE t.payee_account = m.merchant_account AND t.status = 'SUCCESS')</mark> AS revenue
+FROM merchants m WHERE m.category = 'GROCERY'
+ORDER BY revenue, m.merchant_account LIMIT 10;</pre>
+    <div class="gap"></div>
+    <pre class="plan sm">         SubPlan 1
+           ->  Aggregate  (... <mark class="red">loops=311</mark>)
+                 ->  Seq Scan on transactions t  (... rows=447 <mark class="red">loops=311</mark>)</pre>
+  </div>
+  <aside class="notes-src"><p>Ask: what is 311 × 12,606? Let them compute it.</p></aside>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <p class="kicker">Q3 · Dormant merchants</p>
+  <h2>Zero rows. Believable?</h2>
+  <div class="body cols wide-left">
+    <pre class="sql sm">SELECT m.merchant_account,
+       m.merchant_name, m.city
+FROM merchants m
+WHERE m.merchant_account
+      <mark>NOT IN</mark> (SELECT payee_account
+              FROM transactions)
+ORDER BY m.merchant_account;
+
+-- (0 rows)   ~5 seconds</pre>
+    <div>
+      <div class="predict">Sales says some merchants were <b>never</b> paid. Who is right: the query or sales?</div>
+      <div class="gap"></div>
+      <div class="tip step small">Detective question: can <code>payee_account</code> be <code>NULL</code>?</div>
+    </div>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <p class="kicker">Q4 · Customer history, page 251</p>
+  <h2>5,020 rows sorted to show 20</h2>
+  <div class="body">
+    <pre class="sql sm">SELECT t.txn_id, t.txn_ts, t.amount, t.status, m.merchant_name
+FROM transactions t JOIN merchants m ON m.merchant_account = t.payee_account
+WHERE t.payer_account = 'u42@bank'
+ORDER BY t.txn_ts DESC, t.txn_id DESC
+<mark>OFFSET 5000 LIMIT 20</mark>;</pre>
+    <div class="gap"></div>
+    <pre class="plan sm"> Limit  (... rows=20 loops=1)
+   ->  Gather Merge  (... <mark class="red">rows=5020</mark> loops=1)
+         ->  Sort  (...)
+               ->  Hash Join
+                     ->  <mark>Parallel Seq Scan</mark> on transactions t
+                           Rows Removed by Filter: 329928</pre>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide section">
+  <div class="body">
+    <p class="kicker">Team time</p>
+    <h2>Go!</h2>
+    <p class="lead">Diagnose → fix one thing → measure → prove → scorecard.<br>Stuck? Open <b>Hint 1</b> in the guide, then Hint 2.</p>
+  </div>
+  <aside class="notes-src"><p>Walk around. Ask teams "what did the 5 questions tell you?" rather than giving fixes. Fast teams: bonus challenges B1–B4.</p></aside>
+</section>
+
+<!-- 15 -->
+<section class="slide section">
+  <div class="body">
+    <p class="kicker">Part C</p>
+    <h2>Debrief<br>what did we find?</h2>
+    <p class="lead">Reference numbers from the trainer's run</p>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <p class="kicker">Debrief · Baseline</p>
+  <h2>Where the 16 seconds went</h2>
+  <div class="body">
+    <table class="score">
+      <tr><th>Panel</th><th class="num">ms</th><th class="num">Pages</th><th>Answer</th></tr>
+      <tr class="step"><td>Q1 Daily summary</td><td class="num">30</td><td class="num">12,720</td><td>✅</td></tr>
+      <tr class="step bad"><td>Q2 Merchants to call</td><td class="num b">11,400</td><td class="num b">3,920,486</td><td>✅</td></tr>
+      <tr class="step bad"><td>Q3 Dormant merchants</td><td class="num b">5,050</td><td class="num">13,007</td><td class="b">❌ 0 rows</td></tr>
+      <tr class="step"><td>Q4 History page 251</td><td class="num">26</td><td class="num">12,894</td><td>✅</td></tr>
+    </table>
+    <div class="gap"></div>
+    <p class="step">Q2 alone read <b>3.9 million pages</b>: the whole table, <b>311 times</b>.</p>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <p class="kicker">Debrief · Q1</p>
+  <h2>Neither fix works alone</h2>
+  <div class="body">
+    <table>
+      <tr><th>Version</th><th>Plan</th><th class="num">Pages</th><th class="num">ms</th></tr>
+      <tr class="step"><td>Baseline: cast, no index</td><td>Parallel Seq Scan</td><td class="num">12,720</td><td class="num">30</td></tr>
+      <tr class="step"><td>Rewrite only: range</td><td>Parallel Seq Scan</td><td class="num">12,622</td><td class="num">20</td></tr>
+      <tr class="step"><td>Index only: still cast</td><td>Parallel Seq Scan</td><td class="num">12,720</td><td class="num">24</td></tr>
+      <tr class="step good"><td><b>Index + range</b></td><td><b>Index Scan</b> idx_txn_ts</td><td class="num"><b>178</b></td><td class="num"><b>2.4</b></td></tr>
+    </table>
+    <div class="gap"></div>
+    <div class="rule step">An index can only help if the query leaves the column <b>bare</b>: <code>txn_ts &gt;= … AND txn_ts &lt; …</code></div>
+  </div>
+  <aside class="notes-src"><p>Ask a team that created the index first: "Did it help?" No. Then: "Is the index broken?" No, the cast hides the column. Bonus B1: BRIN = 24 kB, 261 pages, 3.1 ms.</p></aside>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <p class="kicker">Debrief · Q2</p>
+  <h2>311 loops × 12,606 pages</h2>
+  <div class="body">
+    <div class="cols c3">
+      <div class="stat"><div class="num">311</div><div class="cap">grocery merchants = loops</div></div>
+      <div class="stat"><div class="num">× 12,606</div><div class="cap">pages per full scan</div></div>
+      <div class="stat"><div class="num red">3.9 M</div><div class="cap">pages read</div></div>
+    </div>
+    <div class="gap"></div><div class="gap"></div>
+    <div class="analogy step"><div class="icon">📞</div><p>Calling the bank <b>311 times</b>, once per merchant, and each time they read the <b>entire</b> ledger. Better: download one statement, <b>or</b> give the bank an index card per merchant.</p></div>
+  </div>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <p class="kicker">Debrief · Q2 · The trap</p>
+  <h2>The fastest version was <span class="red">wrong</span></h2>
+  <div class="body">
+    <div class="vs">
+      <div>
+        <p class="code-label">Original (correct) · 11,400 ms</p>
+        <div class="listbox good">merchant1952  <span class="z">0</span><br>merchant1970  <span class="z">0</span><br>merchant1978  <span class="z">0</span><br>… 5 more with <span class="z">0</span><br>merchant1919  571,641.54<br>merchant1375  831,572.89</div>
+      </div>
+      <div class="step">
+        <p class="code-label">Inner JOIN + GROUP BY · 65 ms</p>
+        <div class="listbox bad">merchant1919  571,641.54<br>merchant1375  831,572.89<br>merchant1888  851,408.03<br>merchant1927  859,154.08<br>merchant1631  866,671.61<br>…</div>
+      </div>
+    </div>
+    <div class="gap"></div>
+    <div class="warn step">Inner <code>JOIN</code> drops merchants with no payments: the <b>8 merchants sales must call</b>. H2 check: 8 rows differ.</div>
+  </div>
+  <aside class="notes-src"><p>Ask: "Who used an inner JOIN?" Run it live. "Which list would sales use?" The ₹0 merchants are the whole point of the panel.</p></aside>
+</section>
+
+<!-- 20 -->
+<section class="slide">
+  <p class="kicker">Debrief · Q2 · Correct fixes</p>
+  <h2>Rewrite, or index the loop</h2>
+  <div class="body">
+    <table>
+      <tr><th>Version</th><th>Plan</th><th class="num">Pages</th><th class="num">ms</th><th>Same?</th></tr>
+      <tr class="step bad"><td>Inner JOIN (trap)</td><td>Hash Join</td><td class="num">12,688</td><td class="num">65</td><td>❌</td></tr>
+      <tr class="step"><td>A: group once + <b>LEFT</b> JOIN</td><td>Hash Right Join</td><td class="num">12,642</td><td class="num">80</td><td>✅</td></tr>
+      <tr class="step"><td>B1: index on <code>payee_account</code></td><td>Bitmap scan × 311</td><td class="num">143,156</td><td class="num">130</td><td>✅</td></tr>
+      <tr class="step good"><td><b>B2: covering index</b></td><td><b>Index Only Scan</b> × 311</td><td class="num"><b>1,854</b></td><td class="num"><b>21</b></td><td>✅</td></tr>
+    </table>
+    <div class="gap"></div>
+    <pre class="sql sm step">CREATE INDEX idx_txn_payee_cover ON transactions (payee_account) INCLUDE (status, amount);</pre>
+  </div>
+  <aside class="notes-src"><p>B2 keeps the original SQL; each loop never visits the table (Heap Fetches: 0). Option A needs no new index: better on write-heavy tables or when the panel covers all merchants.</p></aside>
+</section>
+
+<!-- 21 -->
+<section class="slide">
+  <p class="kicker">Debrief · Q3</p>
+  <h2>Why <code>NOT IN</code> returned nothing</h2>
+  <div class="body cols">
+    <div>
+      <pre class="sql sm">SELECT count(*) FROM transactions
+WHERE payee_account IS NULL;
+--  1982</pre>
+      <div class="gap"></div>
+      <p class="small">Some PENDING payments have no payee yet.</p>
+    </div>
+    <div>
+      <table class="small">
+        <tr><th>Expression</th><th>Result</th></tr>
+        <tr class="step"><td><code>'m1951' NOT IN ('m1','m2')</code></td><td class="green"><b>TRUE</b></td></tr>
+        <tr class="step bad"><td><code>'m1951' NOT IN ('m1','m2', NULL)</code></td><td class="red"><b>NULL</b> → row dropped</td></tr>
+      </table>
+      <div class="gap"></div>
+      <div class="rule step">One <code>NULL</code> in the list → <code>NOT IN</code> returns <b>no rows</b>. Use <code>NOT EXISTS</code>.</div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>"Is merchant 1951 different from NULL?" SQL answers "unknown", and WHERE keeps only TRUE. So every merchant disappears.</p></aside>
+</section>
+
+<!-- 22 -->
+<section class="slide">
+  <p class="kicker">Debrief · Q3</p>
+  <h2>Correct and fast: <code>NOT EXISTS</code></h2>
+  <div class="body">
+    <table>
+      <tr><th>Version</th><th>Plan</th><th class="num">ms</th><th class="num">Rows</th></tr>
+      <tr class="step bad"><td><code>NOT IN</code> (baseline)</td><td>SubPlan, loops=2000, temp files</td><td class="num">5,050</td><td class="num">0 ❌</td></tr>
+      <tr class="step"><td><code>NOT EXISTS</code></td><td>Hash Right Anti Join</td><td class="num">148</td><td class="num">50 ✅</td></tr>
+      <tr class="step good"><td><code>NOT EXISTS</code> + payee index</td><td>Nested Loop Anti Join</td><td class="num">5–12</td><td class="num">50 ✅</td></tr>
+    </table>
+    <div class="gap"></div>
+    <div class="cols">
+      <div class="tip step small">H2 says <b>50 rows differ</b>. That's expected: the <b>old</b> answer was wrong, and the <code>NULL</code> count proves it.</div>
+      <div class="warn step small">Old <code>NOT IN</code> re-run <b>after</b> adding indexes: <b>87 seconds</b>. That's why the 60 s timeout exists.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 23 -->
+<section class="slide">
+  <p class="kicker">Debrief · Q4</p>
+  <h2>The index alone was not enough</h2>
+  <div class="body">
+    <table>
+      <tr><th>Version</th><th>Plan</th><th class="num">Pages</th><th class="num">ms</th></tr>
+      <tr class="step"><td>Baseline</td><td>Parallel Seq Scan + Sort 5,020</td><td class="num">12,894</td><td class="num">26</td></tr>
+      <tr class="step"><td>Composite index, still <code>OFFSET 5000</code></td><td>Bitmap Heap Scan + Sort 5,020</td><td class="num">7,102</td><td class="num">17</td></tr>
+      <tr class="step good"><td><b>Index + keyset</b></td><td><b>Index Scan</b>, 20 rows</td><td class="num"><b>72</b></td><td class="num"><b>0.1</b></td></tr>
+    </table>
+    <div class="gap"></div>
+    <div class="analogy step"><div class="icon">🔖</div><p><code>OFFSET 5000</code> = count 5,000 pages to find your place. <b>Keyset</b> = open the book at the <b>bookmark</b>: <code>(txn_ts, txn_id) &lt; (last shown)</code>.</p></div>
+  </div>
+</section>
+
+<!-- 24 -->
+<section class="slide">
+  <p class="kicker">Debrief · Q4 · Bonus B2</p>
+  <h2>17 payments the customer never sees</h2>
+  <div class="body cols">
+    <div>
+      <div class="stat"><div class="num">10,216</div><div class="cap">payments by u42@bank</div></div>
+      <div class="gap"></div>
+      <div class="stat"><div class="num red">10,199</div><div class="cap">rows the JOIN can show</div></div>
+    </div>
+    <div>
+      <p>The missing 17 are <b>PENDING</b> with <code>payee_account IS NULL</code>.</p>
+      <p class="step">Inner <code>JOIN merchants</code> silently drops them.</p>
+      <div class="rule step"><code>LEFT JOIN</code> + <code>coalesce(m.merchant_name, '(pending)')</code>. A customer should see their pending payments.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 25 -->
+<section class="slide">
+  <p class="kicker">Final scoreboard</p>
+  <h2>Fast, correct, proven</h2>
+  <div class="body">
+    <table class="score">
+      <tr><th>Panel</th><th class="num">Before</th><th class="num">After</th><th>Fix</th></tr>
+      <tr class="step"><td>Q1</td><td class="num b">30 ms · 12,720 p</td><td class="num a">2.9 ms · 181 p</td><td>index + range</td></tr>
+      <tr class="step"><td>Q2</td><td class="num b">11,400 ms · 3.9 M p</td><td class="num a">23 ms · 1,854 p</td><td>covering index</td></tr>
+      <tr class="step"><td>Q3</td><td class="num b">5,050 ms · wrong</td><td class="num a">10 ms · 50 rows</td><td>NOT EXISTS + index</td></tr>
+      <tr class="step"><td>Q4</td><td class="num b">26 ms · 12,894 p</td><td class="num a">0.1 ms · 72 p</td><td>index + keyset</td></tr>
+      <tr class="step hl"><td><b>Dashboard</b></td><td class="num b">≈ 16.5 s</td><td class="num a">≈ 36 ms</td><td><b>≈ 450× faster</b></td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- 26 -->
+<section class="slide">
+  <p class="kicker">What did it cost?</p>
+  <h2>115 MB of indexes on a 98 MB table</h2>
+  <div class="body cols wide-left">
+    <table>
+      <tr><th>Index</th><th>For</th><th class="num">Size</th></tr>
+      <tr><td><code>idx_txn_ts</code></td><td>Q1</td><td class="num">21 MB</td></tr>
+      <tr><td><code>idx_txn_payee_cover</code></td><td>Q2, Q3</td><td class="num">47 MB</td></tr>
+      <tr><td><code>idx_txn_payer_ts</code></td><td>Q4</td><td class="num">47 MB</td></tr>
+      <tr class="good step"><td>BRIN on <code>txn_ts</code> instead</td><td>Q1</td><td class="num"><b>24 kB</b></td></tr>
+    </table>
+    <div>
+      <p>Every index:</p>
+      <ul class="small">
+        <li>uses disk and memory</li>
+        <li>slows every <code>INSERT</code> / <code>UPDATE</code></li>
+      </ul>
+      <div class="predict step small">On a busy payments system, which index would you drop first? What gets slower?</div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>No single right answer. Good answers: replace the Q1 B-tree with BRIN; use Option A for Q2 (no index) if the table is write-heavy; keep Q4's index because a customer screen needs it.</p></aside>
+</section>
+
+<!-- 27 -->
+<section class="slide">
+  <p class="kicker">Course wrap</p>
+  <h2>The whole method on one slide</h2>
+  <div class="body">
+    <div class="vflow">
+      <div class="box blue step"><b>Lab 01:</b> Don't guess. Read the plan. Count pages.</div>
+      <div class="arrow step">▼</div>
+      <div class="box blue step"><b>Lab 02:</b> Index the workload, keep columns bare.</div>
+      <div class="arrow step">▼</div>
+      <div class="box blue step"><b>Lab 03:</b> Know your joins; <code>NOT EXISTS</code> over <code>NOT IN</code>.</div>
+      <div class="arrow step">▼</div>
+      <div class="box blue step"><b>Lab 04:</b> Do work once; prove the same answer.</div>
+      <div class="arrow step">▼</div>
+      <div class="box green step"><b>Lab 05:</b> Fast + correct + known cost = <b>tuned</b>.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 28 -->
+<section class="slide title">
+  <div class="body">
+    <p class="kicker">Lab 05 · Recap</p>
+    <h2 style="font-size:52px">The fastest query is worthless<br>if the answer is wrong.</h2>
+    <div class="gap"></div>
+    <p class="lead">16.5 s → 36 ms · one wrong panel fixed · one "fast" fix rejected</p>
+    <div class="gap"></div>
+    <p class="lead"><b>Next: Lab 06</b>, Functions &amp; Procedures: package the tuned queries for reuse.</p>
+  </div>
+</section>
+
+</div>
+<script src="assets/deck.js"></script>
+</body>
+</html>

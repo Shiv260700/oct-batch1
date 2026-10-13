@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Performance Workshop · Slides</title>
+<style>
+  :root { --ink:#142033; --muted:#5a6880; --line:#d9e1ec; --blue:#1f5fd6; --bg:#eef2f7; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: "Segoe UI", system-ui, -apple-system, sans-serif; }
+  header { background: linear-gradient(135deg,#0f1a2b,#183a73); color: #fff; padding: 48px 6vw 40px; }
+  header p { margin: 0 0 8px; color: #8fb6ff; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; font-size: 13px; }
+  header h1 { margin: 0 0 10px; font-size: clamp(30px, 5vw, 48px); letter-spacing: -.02em; }
+  header span { color: #c9d6ee; font-size: 18px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 32px 16px 60px; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 18px; }
+  a.card { display: block; background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 22px 24px; text-decoration: none; color: inherit; transition: border-color .15s, transform .15s; }
+  a.card:hover { border-color: var(--blue); transform: translateY(-2px); }
+  .n { font-size: 13px; font-weight: 800; letter-spacing: .12em; color: var(--blue); text-transform: uppercase; }
+  h2 { margin: 6px 0 8px; font-size: 22px; }
+  .d { color: var(--muted); font-size: 15px; line-height: 1.45; }
+  footer { text-align: center; color: var(--muted); font-size: 14px; padding: 0 16px 40px; }
+  kbd { background: #fff; border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; }
+</style>
+</head>
+<body>
+<header>
+  <p>SQL Performance Workshop · PostgreSQL</p>
+  <h1>Why is this query slow?</h1>
+  <span>Choose a deck. Press <b>F</b> for fullscreen, <b>N</b> for speaker notes.</span>
+</header>
+<main>
+  <a class="card" href="lab-00-setup.html"><div class="n">Lab 00</div><h2>Setup &amp; the big picture</h2><div class="d">PostgreSQL, the data, pages, heap and indexes.</div></a>
+  <a class="card" href="lab-01-reading-plans.html"><div class="n">Lab 01</div><h2>Reading an execution plan</h2><div class="d">EXPLAIN, ANALYZE, BUFFERS; Seq, Index and Bitmap scans.</div></a>
+  <a class="card" href="lab-02-index-design.html"><div class="n">Lab 02</div><h2>Index design</h2><div class="d">Selectivity, composite order, date ranges, partial, covering, BRIN.</div></a>
+  <a class="card" href="lab-03-joins.html"><div class="n">Lab 03</div><h2>Joins</h2><div class="d">Nested Loop, Hash, Merge; foreign keys; EXISTS and the NOT IN trap.</div></a>
+  <a class="card" href="lab-04-rewriting.html"><div class="n">Lab 04</div><h2>Rewriting queries</h2><div class="d">Group once, CTEs, top-N, keyset pagination, statistics.</div></a>
+  <a class="card" href="lab-05-capstone.html"><div class="n">Lab 05</div><h2>Capstone: the slow dashboard</h2><div class="d">Diagnose, fix, measure and prove: in teams.</div></a>
+  <a class="card" href="lab-06-functions.html"><div class="n">Lab 06</div><h2>Functions &amp; procedures</h2><div class="d">SQL and PL/pgSQL, volatility, plan caching, CALL with COMMIT.</div></a>
+  <a class="card" href="../handouts/cheat-sheet.html"><div class="n">Handout</div><h2>Cheat sheet</h2><div class="d">One printable page: read a plan, pick an index, rewrite safely.</div></a>
+</main>
+<footer>Keys inside a deck: <kbd>→</kbd> next · <kbd>←</kbd> back · <kbd>O</kbd> all slides · <kbd>B</kbd> blank · <kbd>Ctrl/⌘ P</kbd> PDF</footer>
+</body>
+</html>

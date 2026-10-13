@@ -1,0 +1,837 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab 04 · Rewriting Queries</title>
+<link rel="stylesheet" href="assets/deck.css">
+<style>
+  pre mark.red, pre mark.green { color: inherit; }   /* keep text readable inside coloured marks */
+  .widgets { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  .widget { background: var(--soft); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; font-size: 22px; display: flex; justify-content: space-between; align-items: center; }
+  .widget .slow { font-size: 15px; font-weight: 800; letter-spacing: .1em; color: var(--red); background: var(--red-soft); border-radius: 999px; padding: 3px 12px; }
+  .proof { font-family: var(--mono); font-size: 30px; text-align: center; padding: 18px; border-radius: 12px; }
+  .proof.ok { background: var(--green-soft); color: var(--green); border: 2px solid var(--green); }
+  .proof.bad { background: var(--red-soft); color: var(--red); border: 2px solid var(--red); }
+  .pipe { display: flex; flex-direction: column; gap: 6px; }
+  .pipe .box { border-radius: 10px; border: 2px solid var(--line); background: var(--soft); padding: 10px 14px; font-size: 20px; }
+  .pipe .box b { font-family: var(--mono); }
+  .pipe .wide { border-color: var(--red); background: var(--red-soft); }
+  .pipe .thin { border-color: var(--green); background: var(--green-soft); }
+  .pipe .arr { text-align: center; color: var(--muted); font-size: 18px; }
+  .rows { display: grid; grid-template-columns: repeat(20, 1fr); gap: 5px; }
+  .rows .r { height: 30px; border-radius: 5px; background: #dbe4f0; border: 1px solid #c3cfdf; font-size: 11px; color: var(--muted); display: grid; place-items: center; }
+  .rows .r.skip { background: var(--red-soft); border-color: var(--red); }
+  .rows .r.page { background: #9fe0c2; border-color: var(--green); color: var(--ink); font-weight: 700; }
+  .rows .r.cursor { outline: 3px solid var(--amber); }
+  .counter { font-family: var(--mono); font-size: 22px; font-weight: 700; }
+  .vs { display: grid; grid-template-columns: 1fr auto 1fr; gap: 20px; align-items: center; }
+  .vs .mid { font-size: 28px; font-weight: 800; color: var(--muted); }
+</style>
+</head>
+<body data-deck="Lab 04 · Rewriting Queries for Performance">
+<div class="deck">
+
+<!-- 1 -->
+<section class="slide title">
+  <div class="body">
+    <p class="kicker">SQL Performance Workshop · Lab 04</p>
+    <h1>Rewriting Queries<br>for Performance</h1>
+    <p class="lead">Same answer, less work. And <b>proof</b> that the answer did not change.</p>
+  </div>
+  <aside class="notes-src"><p>Labs 01–03 changed the database (indexes, statistics). Today we change the SQL itself.</p><p>The golden rule for the whole lab: a rewrite that changes the answer is a bug, however fast it is.</p></aside>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <p class="kicker">The story</p>
+  <h2>The merchant dashboard is slow</h2>
+  <div class="body">
+    <div class="widgets">
+      <div class="widget step">Payments per merchant <span class="slow">SLOW</span></div>
+      <div class="widget step">Sales per category <span class="slow">SLOW</span></div>
+      <div class="widget step">Latest payment per customer <span class="slow">SLOW</span></div>
+      <div class="widget step">Payment history: page 451 <span class="slow">SLOW</span></div>
+    </div>
+    <div class="gap"></div>
+    <div class="tip step">Every widget returns the <b>right</b> answer. We must keep it right while making it fast.</div>
+  </div>
+  <aside class="notes-src"><p>Each widget is one step of the lab. Ask: "Who has seen a dashboard like this at work?"</p></aside>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <p class="kicker">Today</p>
+  <h2>Six rewrites, one proof</h2>
+  <div class="body">
+    <div class="cols c3">
+      <div class="card blue"><span class="label">1 · Repeated work</span><p>Correlated subquery → group once</p></div>
+      <div class="card blue"><span class="label">2 · Shrink first</span><p>Group <b>before</b> the join</p></div>
+      <div class="card blue"><span class="label">3 · CTEs</span><p>Inlined vs <code>MATERIALIZED</code></p></div>
+    </div>
+    <div class="gap"></div>
+    <div class="cols c3">
+      <div class="card blue"><span class="label">4 · Top-N per group</span><p><code>row_number</code>, <code>DISTINCT ON</code>, <code>LATERAL</code></p></div>
+      <div class="card blue"><span class="label">5 · Pagination</span><p><code>OFFSET</code> → keyset</p></div>
+      <div class="card blue"><span class="label">6 · Statistics</span><p>Fix a wrong guess</p></div>
+    </div>
+    <div class="gap"></div>
+    <div class="card green"><span class="label">Every time · Prove it</span><p><code>EXCEPT ALL</code> both ways → <code>0 | 0</code></p></div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <p class="kicker">Recap · Labs 01–03</p>
+  <h2>So far we changed the <i>database</i></h2>
+  <div class="body cols">
+    <div>
+      <ul>
+        <li>Read plans: <code>Filter</code>, <code>Rows Removed</code>, <code>Buffers</code></li>
+        <li>Add the right index: composite, partial</li>
+        <li>Index-friendly filters: date ranges</li>
+        <li>Joins and <code>EXISTS</code></li>
+      </ul>
+    </div>
+    <div class="card amber step">
+      <span class="label">Today</span>
+      <h3>Change the SQL itself</h3>
+      <p>Same question, asked in a way that makes PostgreSQL do <b>less work</b>.</p>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Quick recap only. Do not re-teach indexes. If someone asks about composite or partial indexes, point back to Lab 02.</p></aside>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <p class="kicker">The routine</p>
+  <h2>Every rewrite follows five steps</h2>
+  <div class="body">
+    <div class="flow">
+      <div class="box"><b>1 Measure</b>EXPLAIN (ANALYZE, BUFFERS)</div>
+      <div class="arrow">→</div>
+      <div class="box amber"><b>2 Find waste</b>loops, big joins, sorts</div>
+      <div class="arrow">→</div>
+      <div class="box blue"><b>3 Rewrite</b>one thing</div>
+      <div class="arrow">→</div>
+      <div class="box green"><b>4 Prove</b>same rows: 0 | 0</div>
+      <div class="arrow">→</div>
+      <div class="box"><b>5 Measure</b>pages + time</div>
+    </div>
+    <div class="gap"></div><div class="gap"></div>
+    <div class="rule step">Step 4 is not optional. <b>Faster but different = bug.</b></div>
+  </div>
+  <aside class="notes-src"><p>Write these five steps on the whiteboard. Point at them every time you start a new rewrite.</p></aside>
+</section>
+
+<!-- 6 -->
+<section class="slide section">
+  <div class="body">
+    <p class="kicker">Part 1</p>
+    <h2>Repeated work<br>and how to prove a rewrite</h2>
+    <p class="lead">Steps 1–4 in the lab guide</p>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <p class="kicker">Step 1 · Predict</p>
+  <h2>Payments per merchant</h2>
+  <div class="body">
+    <pre class="sql">EXPLAIN (ANALYZE, BUFFERS)
+SELECT m.merchant_account,
+       (SELECT count(*)
+        FROM transactions t
+        WHERE t.payee_account = m.merchant_account) AS payments
+FROM merchants m
+ORDER BY m.merchant_account
+LIMIT 20;</pre>
+    <div class="gap"></div>
+    <div class="predict">The subquery sits inside <code>SELECT</code>. How many times will it run for 20 merchants?</div>
+  </div>
+  <aside class="notes-src"><p>Most freshers answer "once". Let them commit to an answer before running.</p><p>We use LIMIT 20 on purpose: the full list takes over a minute.</p></aside>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <p class="kicker">Step 1 · See</p>
+  <h2>The subquery ran once per merchant</h2>
+  <div class="body top">
+    <pre class="plan sm"> Limit  (... actual time=41.841..<mark class="red">826.988</mark> rows=20 loops=1)
+   <mark>Buffers: shared hit=190743 read=61380</mark>
+   ->  Index Only Scan using merchants_pkey on merchants m  (... rows=20 loops=1)
+         <mark>SubPlan 1</mark>
+           ->  Aggregate  (... actual time=41.346..41.346 rows=1 <mark class="red">loops=20</mark>)
+                 ->  Seq Scan on transactions t  (... rows=1709 <mark class="red">loops=20</mark>)
+                       Filter: (payee_account = m.merchant_account)
+                       Rows Removed by Filter: 998291
+ Execution Time: 826.988 ms</pre>
+    <div class="gap"></div>
+    <div class="cols c3 step">
+      <div class="stat"><div class="num red">20</div><div class="cap">full table scans</div></div>
+      <div class="stat"><div class="num">252k</div><div class="cap">pages (20 × 12,606)</div></div>
+      <div class="stat"><div class="num red">827</div><div class="cap">ms for 20 merchants</div></div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>SubPlan = a query inside the query. loops=20 = it ran 20 times. Each run is a full scan of 12,606 pages.</p></aside>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <p class="kicker">Step 1 · The full list</p>
+  <h2>2,000 merchants → about 82 seconds</h2>
+  <div class="body cols wide-left">
+    <div>
+      <pre class="plan sm"> Seq Scan on merchants m  (cost=0.00..<mark class="red">50214620.00</mark> rows=2000)
+   SubPlan 1
+     ->  Aggregate  (cost=25107.28..25107.29 rows=1)
+           ->  Seq Scan on transactions t  (cost=0.00..25106.00)</pre>
+      <div class="gap"></div>
+      <ul class="small">
+        <li><code>EXPLAIN</code> only: <b>do not</b> add <code>ANALYZE</code> here</li>
+        <li>Cost 50,214,620 = 2,000 × 25,107</li>
+        <li>2,000 × 41 ms ≈ <b class="red">82 s</b></li>
+      </ul>
+    </div>
+    <div class="analogy step"><div class="icon">☎️</div><p>Calling the bank <b>2,000 times</b>: "how many payments did merchant 1 get?", "and merchant 2?"… instead of downloading <b>one statement</b> and counting yourself.</p></div>
+  </div>
+  <aside class="notes-src"><p>The analogy is the key idea of Part 1: one question asked 2,000 times vs one bulk answer.</p></aside>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <p class="kicker">Step 2 · Rewrite</p>
+  <h2>Group once, then join</h2>
+  <div class="body cols">
+    <pre class="sql sm">SELECT m.merchant_account,
+       COALESCE(c.payments, 0) AS payments
+FROM merchants m
+LEFT JOIN (SELECT payee_account,
+                  count(*) AS payments
+           FROM transactions
+           GROUP BY payee_account) c
+       ON c.payee_account = m.merchant_account;</pre>
+    <pre class="plan xs"> <mark>Hash Left Join</mark>  (... rows=2000 loops=1)
+   Hash Cond: (m.merchant_account
+               = c.payee_account)
+   ->  Seq Scan on merchants m  (rows=2000)
+   ->  Hash  (... rows=1950 loops=1)
+         ->  HashAggregate  (rows=1951 loops=1)
+               ->  Seq Scan on transactions
+                     (rows=1000000 <mark class="green">loops=1</mark>)
+ Execution Time: <mark class="green">162.105 ms</mark></pre>
+  </div>
+  <div class="cols step" style="margin-top:20px">
+    <div class="tip"><code>transactions</code> scanned <b>once</b>: all 2,000 merchants in 162 ms.</div>
+    <div class="warn"><code>LEFT JOIN</code> + <code>COALESCE(…, 0)</code> keeps the 50 merchants with no payments.</div>
+  </div>
+  <aside class="notes-src"><p>1,951 groups = 1,950 merchants that were paid + 1 group for the NULL payee (pending payments).</p></aside>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <p class="kicker">Step 3 · Another fix</p>
+  <h2>Or make each repeat cheap: add an index</h2>
+  <div class="body top">
+    <pre class="plan sm"> Seq Scan on merchants m  (... rows=2000 loops=1)
+   SubPlan 1
+     ->  Aggregate  (... actual time=0.044..0.044 rows=1 loops=2000)
+           ->  <mark class="green">Index Only Scan using idx_txn_payee</mark> on transactions t  (... loops=2000)
+                 Index Cond: (payee_account = m.merchant_account)
+ Execution Time: <mark class="green">88.582 ms</mark></pre>
+    <div class="gap"></div>
+    <table>
+      <tr><th>Version</th><th>Work</th><th class="num">Time</th></tr>
+      <tr class="bad"><td>Correlated, no index</td><td>2,000 full scans</td><td class="num">~82 s</td></tr>
+      <tr class="step"><td>Group once + join</td><td>1 full scan</td><td class="num">162 ms</td></tr>
+      <tr class="good step"><td>Correlated + index</td><td>2,000 index lookups</td><td class="num">88 ms</td></tr>
+    </table>
+  </div>
+  <aside class="notes-src"><p>Important nuance: correlated subqueries are not evil. A repeated <i>full scan</i> is. With an index each repeat costs 0.044 ms.</p></aside>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <p class="kicker">Step 4 · Prove it</p>
+  <h2>The equivalence template</h2>
+  <div class="body cols wide-left">
+    <pre class="sql xs">WITH a AS (     -- original query
+    ...
+), b AS (       -- rewritten query
+    ...
+)
+SELECT
+ (SELECT count(*) FROM
+    (SELECT * FROM a EXCEPT ALL SELECT * FROM b) x)
+      AS only_in_original,
+ (SELECT count(*) FROM
+    (SELECT * FROM b EXCEPT ALL SELECT * FROM a) x)
+      AS only_in_rewrite;</pre>
+    <div>
+      <div class="analogy"><div class="icon">🧾</div><p>Tick two bills against each other <b>both ways</b>: items on bill A missing from B, and items on B missing from A.</p></div>
+      <div class="gap"></div>
+      <div class="tip step"><code>EXCEPT ALL</code> also catches a row that appears a different <b>number of times</b>.</div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>The full version with both queries filled in is Step 4 in sql/lab04.sql. Learners reuse this template after every rewrite in this lab.</p></aside>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <p class="kicker">Step 4 · Results</p>
+  <h2>A correct rewrite, and a fast wrong one</h2>
+  <div class="body cols">
+    <div>
+      <h3>Rewrite with <code>LEFT JOIN</code></h3>
+      <div class="proof ok">0 | 0</div>
+      <p class="small" style="margin-top:12px">Exactly the same rows. ✅</p>
+    </div>
+    <div class="step">
+      <h3>Rewrite with <code>JOIN</code></h3>
+      <div class="proof bad">50 | 0</div>
+      <p class="small" style="margin-top:12px">50 merchants with no payments <b>vanished</b>. ❌</p>
+    </div>
+  </div>
+  <div class="rule step" style="margin-top:24px">Faster but different answer = <b>bug</b>. Always check both directions.</div>
+  <aside class="notes-src"><p>Let them run the INNER JOIN version themselves. "It was faster!" is the typical reaction. Then show 50 | 0.</p></aside>
+</section>
+
+<!-- 14 -->
+<section class="slide section">
+  <div class="body">
+    <p class="kicker">Part 2</p>
+    <h2>Do less work<br>shrink first, inline CTEs</h2>
+    <p class="lead">Steps 5–6 in the lab guide</p>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <p class="kicker">Step 5 · Predict</p>
+  <h2>Sales per category: when should we group?</h2>
+  <div class="body cols">
+    <pre class="sql xs">-- 5a. Join first, then group
+SELECT m.category, count(*), sum(t.amount)
+FROM transactions t
+JOIN merchants m
+  ON m.merchant_account = t.payee_account
+GROUP BY m.category;</pre>
+    <pre class="sql xs">-- 5b. Group by merchant first, then join
+SELECT m.category, sum(s.payments), sum(s.total)
+FROM (SELECT payee_account,
+             count(*) AS payments,
+             sum(amount) AS total
+      FROM transactions
+      GROUP BY payee_account) s
+JOIN merchants m
+  ON m.merchant_account = s.payee_account
+GROUP BY m.category;</pre>
+  </div>
+  <div class="predict" style="margin-top:18px">How many rows enter the join in 5a? In 5b?</div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <p class="kicker">Step 5 · See</p>
+  <h2>Shrink rows before the expensive step</h2>
+  <div class="body cols">
+    <div class="pipe">
+      <h3>5a · join → group</h3>
+      <div class="box">Seq Scan <b>1,000,000</b></div><div class="arr">▼</div>
+      <div class="box wide">Hash Join <b>998,018</b> rows</div><div class="arr">▼</div>
+      <div class="box">HashAggregate <b>6</b></div>
+      <p class="small"><b>~310 ms</b></p>
+    </div>
+    <div class="pipe step">
+      <h3>5b · group → join</h3>
+      <div class="box">Seq Scan <b>1,000,000</b> → HashAggregate <b>1,951</b></div><div class="arr">▼</div>
+      <div class="box thin">Hash Join <b>1,950</b> rows</div><div class="arr">▼</div>
+      <div class="box">GroupAggregate <b>6</b></div>
+      <p class="small"><b>~195 ms</b> · proof: <code>0 | 0</code> ✅</p>
+    </div>
+  </div>
+  <aside class="notes-src"><p>The gain is moderate here because the join is cheap (small merchants hash table). Pre-aggregation pays most when the join is expensive. Prove with Step 5c.</p><p>998,018, not 1,000,000: 1,982 pending payments have no payee and are dropped by the inner join, in both versions.</p></aside>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <p class="kicker">Step 5 · Result</p>
+  <h2>Same 6 rows either way</h2>
+  <div class="body">
+    <table class="small">
+      <tr><th>category</th><th class="num">payments</th><th class="num">total</th></tr>
+      <tr><td>UTILITIES</td><td class="num">187,341</td><td class="num">847,990,670.46</td></tr>
+      <tr><td>FUEL</td><td class="num">184,011</td><td class="num">832,215,085.61</td></tr>
+      <tr><td>TRAVEL</td><td class="num">182,989</td><td class="num">827,319,275.31</td></tr>
+      <tr><td>ELECTRONICS</td><td class="num">147,731</td><td class="num">670,434,944.78</td></tr>
+      <tr><td>FOOD</td><td class="num">148,541</td><td class="num">668,369,894.56</td></tr>
+      <tr><td>GROCERY</td><td class="num">147,405</td><td class="num">665,747,115.39</td></tr>
+    </table>
+    <div class="gap"></div>
+    <div class="rule step">Shrink rows <b>before</b> an expensive join. Then prove the totals match.</div>
+  </div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <p class="kicker">Step 6 · Predict</p>
+  <h2>A CTE totals every merchant. We ask for one.</h2>
+  <div class="body cols wide-left">
+    <pre class="sql sm">WITH merchant_sales AS (
+    SELECT payee_account,
+           count(*) AS payments,
+           sum(amount) AS total
+    FROM transactions
+    GROUP BY payee_account
+)
+SELECT * FROM merchant_sales
+WHERE payee_account = 'merchant7';</pre>
+    <div class="predict">Will PostgreSQL total all 1,951 merchants and then keep one, or only total <code>merchant7</code>?</div>
+  </div>
+  <aside class="notes-src"><p>CTE = Common Table Expression = the WITH part. Freshers love CTEs for readability. Good! Now they learn what happens underneath.</p></aside>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <p class="kicker">Step 6 · See</p>
+  <h2>Default: the filter moves <i>inside</i> the CTE</h2>
+  <div class="body top">
+    <div class="code-label">6a · default (used once → merged)</div>
+    <pre class="plan xs"> GroupAggregate  (... rows=1 loops=1)
+   ->  Bitmap Heap Scan on transactions  (... rows=4397 loops=1)
+         ->  Bitmap Index Scan on idx_txn_payee
+               <mark class="green">Index Cond: (payee_account = 'merchant7'::text)</mark>
+ Execution Time: <mark class="green">2.653 ms</mark></pre>
+    <div class="gap"></div>
+    <div class="code-label step">6b · WITH merchant_sales AS MATERIALIZED (…)</div>
+    <pre class="plan xs step"> <mark class="red">CTE Scan on merchant_sales</mark>  (... rows=1 loops=1)
+   Filter: (payee_account = 'merchant7'::text)
+   <mark class="red">Rows Removed by Filter: 1950</mark>
+   CTE merchant_sales
+     ->  HashAggregate  (... rows=1951 loops=1)
+           ->  Seq Scan on transactions  (... rows=1000000 loops=1)
+ Execution Time: <mark class="red">193.134 ms</mark></pre>
+  </div>
+  <aside class="notes-src"><p>Default: PostgreSQL merged the CTE into the query and pushed the filter down, so it reads only merchant7's 4,397 rows via the index.</p><p>MATERIALIZED: build all 1,951 totals first, then throw away 1,950. 70× slower.</p></aside>
+</section>
+
+<!-- 20 -->
+<section class="slide">
+  <p class="kicker">Step 6 · Rules</p>
+  <h2>Inlined or materialized?</h2>
+  <div class="body cols wide-left">
+    <table class="small">
+      <tr><th>Mode</th><th>What happens</th></tr>
+      <tr class="good"><td>Default, used <b>once</b></td><td>Merged; filter pushed down</td></tr>
+      <tr><td>Default, used <b>twice</b></td><td>Built once, reused (<code>CTE Scan</code> ×2)</td></tr>
+      <tr class="bad"><td><code>MATERIALIZED</code></td><td>Always built first, then filtered</td></tr>
+      <tr><td><code>NOT MATERIALIZED</code></td><td>Always merged, even when used twice</td></tr>
+    </table>
+    <div>
+      <div class="analogy"><div class="icon">🍲</div><p><b>Materialized</b> = cook the whole buffet, then serve one plate. <b>Inlined</b> = cook just the dish that was ordered.</p></div>
+      <div class="gap"></div>
+      <div class="rule step">A CTE is for readability. Let PostgreSQL merge it, unless you have measured otherwise.</div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Step 6c shows both "used twice" cases with EXPLAIN. Tip: <code>CTE Scan</code> in a plan = the CTE was materialized.</p></aside>
+</section>
+
+<!-- 21 -->
+<section class="slide section">
+  <div class="body">
+    <p class="kicker">Part 3</p>
+    <h2>Return fewer rows<br>top-N and pagination</h2>
+    <p class="lead">Steps 7–8 in the lab guide</p>
+  </div>
+</section>
+
+<!-- 22 -->
+<section class="slide">
+  <p class="kicker">Step 7 · Top-N per group</p>
+  <h2>Latest payment of every payer</h2>
+  <div class="body cols">
+    <div>
+      <div class="code-label">7a · row_number() (any database)</div>
+      <pre class="sql xs">SELECT payer_account, txn_id, txn_ts, amount
+FROM (SELECT payer_account, txn_id, txn_ts, amount,
+        row_number() OVER (
+          PARTITION BY payer_account
+          ORDER BY txn_ts DESC, txn_id DESC) AS rn
+      FROM transactions) ranked
+WHERE rn = 1;</pre>
+    </div>
+    <div>
+      <div class="code-label">7b · DISTINCT ON (PostgreSQL)</div>
+      <pre class="sql xs">SELECT DISTINCT ON (payer_account)
+       payer_account, txn_id, txn_ts, amount
+FROM transactions
+ORDER BY payer_account,
+         txn_ts DESC, txn_id DESC;</pre>
+      <div class="gap"></div>
+      <div class="warn step"><code>txn_id DESC</code> is the <b>tie-breaker</b>: two payments in the same second must not pick a random winner.</div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Read row_number aloud: "number the payments of each payer, newest first; keep number 1".</p></aside>
+</section>
+
+<!-- 23 -->
+<section class="slide">
+  <p class="kicker">Step 7 · See</p>
+  <h2>Both sort one million rows</h2>
+  <div class="body cols">
+    <pre class="plan xs"> Subquery Scan on ranked  (rows=9900)
+   ->  WindowAgg  (rows=9900)
+         ->  <mark class="red">Sort</mark>  (rows=1000000)
+               <mark class="red">Sort Method: external merge
+               Disk: 48256kB</mark>
+ Execution Time: 1175.107 ms</pre>
+    <pre class="plan xs"> Unique  (rows=9900)
+   ->  <mark class="red">Sort</mark>  (rows=1000000)
+         <mark class="red">Sort Method: external merge
+         Disk: 48256kB</mark>
+ Execution Time: 1151.951 ms</pre>
+  </div>
+  <div class="cols c3 step" style="margin-top:24px">
+    <div class="stat"><div class="num">9,900</div><div class="cap">rows: one per payer</div></div>
+    <div class="stat"><div class="num red">48 MB</div><div class="cap">sort spilled to disk</div></div>
+    <div class="stat"><div class="num green">0 | 0</div><div class="cap">same rows (Step 7c)</div></div>
+  </div>
+  <aside class="notes-src"><p>Same work, same rows. DISTINCT ON is just shorter. "external merge Disk" = the sort did not fit in work_mem (4 MB). Optional: SET work_mem = '64MB' and rerun.</p></aside>
+</section>
+
+<!-- 24 -->
+<section class="slide">
+  <p class="kicker">Step 7 · LATERAL</p>
+  <h2>Latest 3 payments of every merchant</h2>
+  <div class="body cols wide-left">
+    <pre class="sql xs">CREATE INDEX idx_txn_payee_ts
+    ON transactions (payee_account, txn_ts DESC);
+
+SELECT m.merchant_account,
+       last3.txn_id, last3.txn_ts, last3.amount
+FROM merchants m
+CROSS JOIN LATERAL (
+    SELECT t.txn_id, t.txn_ts, t.amount
+    FROM transactions t
+    WHERE t.payee_account = m.merchant_account
+    ORDER BY t.txn_ts DESC
+    LIMIT 3
+) last3;</pre>
+    <div class="analogy"><div class="icon">🧾</div><p>For <b>each shop</b>, take the top 3 receipts from its pile, which is already <b>sorted newest first</b> (the index). No need to sort a million receipts.</p></div>
+  </div>
+  <aside class="notes-src"><p>LATERAL = "for each row on the left, run this small query". It is a correlated subquery that can return several rows.</p></aside>
+</section>
+
+<!-- 25 -->
+<section class="slide">
+  <p class="kicker">Step 7 · See</p>
+  <h2>3 index entries per merchant, then stop</h2>
+  <div class="body top">
+    <pre class="plan sm"> Nested Loop  (... actual time=0.025..16.551 rows=5850 loops=1)
+   ->  Seq Scan on merchants m  (... rows=2000 loops=1)
+   ->  <mark>Limit</mark>  (... rows=3 <mark>loops=2000</mark>)
+         ->  <mark class="green">Index Scan using idx_txn_payee_ts</mark> on transactions t  (... rows=3 loops=2000)
+               Index Cond: (payee_account = m.merchant_account)
+ Execution Time: <mark class="green">16.743 ms</mark></pre>
+    <div class="gap"></div>
+    <table class="small">
+      <tr><th>Pattern</th><th>Best when</th></tr>
+      <tr><td><code>row_number()</code></td><td>Any database; top 1, 2, 3…</td></tr>
+      <tr><td><code>DISTINCT ON</code></td><td>PostgreSQL; top <b>1</b> only; shortest SQL</td></tr>
+      <tr class="good"><td><code>LATERAL … LIMIT n</code> + index</td><td>Few rows per group; index on (group, order)</td></tr>
+    </table>
+  </div>
+  <aside class="notes-src"><p>5,850 = 1,950 merchants × 3 (the 50 unpaid merchants return nothing with CROSS JOIN LATERAL). 17 ms vs over 1 s for sorting everything.</p></aside>
+</section>
+
+<!-- 26 -->
+<section class="slide">
+  <p class="kicker">Step 8 · Predict</p>
+  <h2>Page 451 of a busy payer's history</h2>
+  <div class="body">
+    <p><code>u42@bank</code> has <b>10,216</b> payments. Show rows 9,001–9,020:</p>
+    <pre class="sql">SELECT txn_id, txn_ts, amount
+FROM transactions
+WHERE payer_account = 'u42@bank'
+ORDER BY txn_ts DESC, txn_id DESC
+OFFSET 9000 LIMIT 20;</pre>
+    <div class="gap"></div>
+    <div class="predict">We want 20 rows. How many rows must PostgreSQL read?</div>
+  </div>
+  <aside class="notes-src"><p>Index for this step: (payer_account, txn_ts DESC, txn_id DESC). Create it first (in the lab file).</p></aside>
+</section>
+
+<!-- 27 -->
+<section class="slide">
+  <p class="kicker">Step 8 · See</p>
+  <h2>OFFSET reads the rows it skips</h2>
+  <div class="body top">
+    <pre class="plan sm"> Limit  (... actual time=7.332..7.335 rows=20 loops=1)
+   <mark class="red">Buffers: shared hit=7017 read=65</mark>
+   ->  Sort  (... <mark class="red">rows=9020</mark> loops=1)
+         ->  Bitmap Heap Scan on transactions  (... rows=10216 loops=1)
+ Execution Time: 7.345 ms</pre>
+    <div class="gap"></div>
+    <div class="cols step">
+      <div class="analogy"><div class="icon">📖</div><p>OFFSET = counting 9,000 lines from the start of the book every time you turn the page.</p></div>
+      <div class="analogy"><div class="icon">🔖</div><p>Keyset = a <b>bookmark</b>: open the book right where you stopped.</p></div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>7,082 pages read for 20 rows. And page 452 will be even slower than page 451.</p></aside>
+</section>
+
+<!-- 28 -->
+<section class="slide">
+  <p class="kicker">Step 8 · Keyset</p>
+  <h2>Remember the last row, continue after it</h2>
+  <div class="body cols wide-left">
+    <pre class="sql xs">-- last row of the previous page (row 9,000)
+SELECT txn_ts AS last_ts, txn_id AS last_id
+FROM transactions
+WHERE payer_account = 'u42@bank'
+ORDER BY txn_ts DESC, txn_id DESC
+OFFSET 8999 LIMIT 1 \gset
+
+-- next page: seek straight past the bookmark
+SELECT txn_id, txn_ts, amount
+FROM transactions
+WHERE payer_account = 'u42@bank'
+  AND (txn_ts, txn_id) &lt; (:'last_ts', :last_id)
+ORDER BY txn_ts DESC, txn_id DESC
+LIMIT 20;</pre>
+    <div>
+      <p class="small"><code>\gset</code> stores the result in psql variables:</p>
+      <ul class="small">
+        <li><code>:last_ts</code> = <code>2026-01-11 05:57:53</code></li>
+        <li><code>:last_id</code> = <code>114483</code></li>
+      </ul>
+      <div class="tip step">In an app, the screen keeps these two values, like a bookmark.</div>
+      <div class="gap"></div>
+      <div class="warn step">Compare <b>both</b> columns. <code>txn_ts</code> alone skips rows with the same timestamp.</div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>(a, b) &lt; (x, y) is a row comparison: "a &lt; x, or a = x and b &lt; y". It matches the ORDER BY exactly.</p></aside>
+</section>
+
+<!-- 29 -->
+<section class="slide">
+  <p class="kicker">Step 8 · See</p>
+  <h2>15 pages instead of 7,082</h2>
+  <div class="body top">
+    <pre class="plan xs"> Limit  (... actual time=0.006..0.012 rows=20 loops=1)
+   <mark class="green">Buffers: shared hit=15</mark>
+   ->  <mark class="green">Index Scan using idx_txn_payer_ts_id</mark> on transactions  (... rows=20 loops=1)
+         Index Cond: ((payer_account = 'u42@bank'::text) AND
+                      (ROW(txn_ts, txn_id) &lt; ROW('2026-01-11 05:57:53'::timestamp, 114483)))
+ Execution Time: <mark class="green">0.024 ms</mark></pre>
+    <div class="gap"></div>
+    <table class="small">
+      <tr><th></th><th class="num">OFFSET 9000</th><th class="num">Keyset</th></tr>
+      <tr><td>Pages</td><td class="num red">7,082</td><td class="num green"><b>15</b></td></tr>
+      <tr><td>Time</td><td class="num">~7.3 ms</td><td class="num green"><b>~0.02 ms</b></td></tr>
+      <tr><td>Slower on later pages?</td><td class="num">Yes</td><td class="num">No</td></tr>
+      <tr><td>Jump to "page 451" directly?</td><td class="num">Yes</td><td class="num">No (next / previous)</td></tr>
+    </table>
+  </div>
+  <aside class="notes-src"><p>Proof: Step 8c gives 0 | 0, so it is the same 20 rows. Trade-off: keyset cannot jump to an arbitrary page number. Infinite scroll and "next" buttons are the perfect fit.</p></aside>
+</section>
+
+<!-- 30 -->
+<section class="slide">
+  <p class="kicker">See it</p>
+  <h2>OFFSET vs keyset: rows touched</h2>
+  <div class="body top" data-pagesim>
+    <p class="small muted" style="margin-bottom:8px">120 rows of history, newest first. We want the page of 10 rows after row 100.</p>
+    <div class="rows"></div>
+    <div class="sim sim-controls" style="background:none;border:none;padding:0;margin-top:16px">
+      <button data-run="offset">▶ OFFSET 100 LIMIT 10</button>
+      <button data-run="keyset">▶ Keyset after row 100</button>
+      <button data-run="reset">↺ Reset</button>
+      <span class="counter" style="margin-left:18px">rows read: <span data-count>0</span></span>
+    </div>
+    <div class="sim-msg" data-msg>Click a button.</div>
+  </div>
+  <aside class="notes-src"><p>OFFSET walks through 100 red rows before reaching the 10 green ones. Keyset jumps to the bookmark (amber) and reads only the 10 green rows.</p></aside>
+</section>
+
+<!-- 31 -->
+<section class="slide section">
+  <div class="body">
+    <p class="kicker">Part 4</p>
+    <h2>Statistics<br>when the guess is wrong</h2>
+    <p class="lead">Step 9 in the lab guide</p>
+  </div>
+</section>
+
+<!-- 32 -->
+<section class="slide">
+  <p class="kicker">Step 9 · The guess</p>
+  <h2>The planner multiplies the two facts</h2>
+  <div class="body top">
+    <pre class="plan xs"> attname |     most_common_vals     |         most_common_freqs
+---------+--------------------------+-----------------------------------
+ status  | {SUCCESS,<mark>FAILED</mark>,PENDING} | {0.9404333,<mark>0.0488</mark>,0.010766666}
+ channel | {APP,UPI_QR,<mark>WEB</mark>}         | {0.6045333,0.24543333,<mark>0.15003334</mark>}</pre>
+    <div class="gap"></div>
+    <div class="flow">
+      <div class="box">4.9% FAILED</div><div class="arrow">×</div>
+      <div class="box">15% WEB</div><div class="arrow">×</div>
+      <div class="box">1,000,000</div><div class="arrow">=</div>
+      <div class="box amber"><b>~7,300</b>guess</div>
+      <div class="arrow">vs</div>
+      <div class="box red"><b>22,708</b>actual</div>
+    </div>
+    <div class="gap"></div>
+    <div class="analogy step"><div class="icon">☔</div><p>Like assuming <b>rain</b> and <b>umbrellas</b> are unrelated. In our data, <b>WEB payments fail 3× more often</b>: the columns are related.</p></div>
+  </div>
+  <aside class="notes-src"><p>This is the 3× miss from Lab 01 Try-it T2. The planner assumes columns are independent unless told otherwise.</p></aside>
+</section>
+
+<!-- 33 -->
+<section class="slide">
+  <p class="kicker">Step 9 · The fix</p>
+  <h2>Teach the planner that the columns are related</h2>
+  <div class="body">
+    <pre class="sql sm">CREATE STATISTICS st_status_channel (mcv) ON status, channel FROM transactions;
+ANALYZE transactions;</pre>
+    <div class="gap"></div>
+    <div class="vs">
+      <div><div class="code-label">Before</div><pre class="plan xs"> Seq Scan  (... <mark class="red">rows=7322</mark> ...)
+           (actual ... rows=22708)</pre></div>
+      <div class="mid">→</div>
+      <div class="step"><div class="code-label">After</div><pre class="plan xs"> Seq Scan  (... <mark class="green">rows=23467</mark> ...)
+           (actual ... rows=22708)</pre></div>
+    </div>
+    <div class="gap"></div>
+    <div class="cols step">
+      <div class="tip">Your numbers may differ slightly: <code>ANALYZE</code> reads a <b>random sample</b>.</div>
+      <div class="rule">Guess far from actual? Fix the <b>statistics</b> first, then the SQL.</div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Why care: estimates drive plan choices: join method (Lab 03), index vs scan (Lab 02). A 3× wrong guess can pick the wrong plan. mcv = most common value combinations.</p></aside>
+</section>
+
+<!-- 34 -->
+<section class="slide">
+  <p class="kicker">Summary</p>
+  <h2>Spot it in the plan, rewrite, prove</h2>
+  <div class="body">
+    <table class="small">
+      <tr><th>You see in the plan</th><th>Rewrite</th></tr>
+      <tr><td><code>SubPlan</code> + big <code>loops=</code> of full scans</td><td>Group once + <code>LEFT JOIN</code>, or index the subquery</td></tr>
+      <tr><td>Join on ~1M rows, then group</td><td>Group first, then join</td></tr>
+      <tr><td><code>CTE Scan</code> + <code>Rows Removed by Filter</code></td><td>Let the CTE inline (no <code>MATERIALIZED</code>)</td></tr>
+      <tr><td>Huge <code>Sort</code> for "latest per group"</td><td><code>DISTINCT ON</code>, or <code>LATERAL</code> + index</td></tr>
+      <tr><td><code>OFFSET</code> reading thousands of rows</td><td>Keyset: <code>(ts, id) &lt; (:last_ts, :last_id)</code></td></tr>
+      <tr><td>Estimate far from actual</td><td><code>CREATE STATISTICS</code> + <code>ANALYZE</code></td></tr>
+    </table>
+    <div class="gap"></div>
+    <div class="rule">After every rewrite: <code>EXCEPT ALL</code> both ways → <code>0 | 0</code></div>
+  </div>
+</section>
+
+<!-- 35 -->
+<section class="slide">
+  <p class="kicker">Avoid these</p>
+  <h2>Common mistakes</h2>
+  <div class="body cols">
+    <ul class="small">
+      <li>Rewriting without proving</li>
+      <li><code>JOIN</code> instead of <code>LEFT JOIN</code>: rows vanish</li>
+      <li><code>COALESCE(max, 0)</code>: max of nothing is <code>NULL</code></li>
+      <li><code>EXCEPT</code> instead of <code>EXCEPT ALL</code></li>
+    </ul>
+    <ul class="small">
+      <li>No tie-breaker in <code>ORDER BY</code></li>
+      <li><code>MATERIALIZED</code> "for speed": blocks pushdown</li>
+      <li>Keyset on <code>txn_ts</code> alone: skipped rows</li>
+      <li><code>EXPLAIN ANALYZE</code> on the 2,000-loop query: over a minute</li>
+    </ul>
+  </div>
+</section>
+
+<!-- 36 -->
+<section class="slide">
+  <p class="kicker">Quick quiz</p>
+  <h2>Check yourself</h2>
+  <div class="body small">
+    <table>
+      <tr><th>Question</th><th>Answer</th></tr>
+      <tr><td>1. <code>SubPlan 1</code> with <code>loops=2000</code> means?</td><td class="step">The subquery ran 2,000 times</td></tr>
+      <tr><td>2. Proof says <code>50 | 0</code>. Correct rewrite?</td><td class="step">No: 50 rows lost</td></tr>
+      <tr><td>3. Default CTE 2.7 ms, <code>MATERIALIZED</code> 193 ms. Why?</td><td class="step">Default pushes the filter inside</td></tr>
+      <tr><td>4. Page 451: OFFSET or keyset?</td><td class="step">Keyset: seeks, reads 15 pages</td></tr>
+      <tr><td>5. Guess 7,322, actual 22,708. Fix?</td><td class="step"><code>CREATE STATISTICS</code> + <code>ANALYZE</code></td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- 37 -->
+<section class="slide">
+  <p class="kicker">Your turn</p>
+  <h2>Try it yourself</h2>
+  <div class="body small">
+    <ul>
+      <li><b>T1.</b> Rewrite "biggest payment per account" (correlated <code>max()</code>) as group once + join. Prove it. What should the 100 non-paying accounts show: <code>0</code> or <code>NULL</code>?</li>
+      <li><b>T2.</b> Latest <b>2</b> payments per payer. How many rows? Why can't <code>DISTINCT ON</code> do it?</li>
+      <li><b>T3.</b> <code>MATERIALIZED</code> CTE for <code>'merchant1'</code> vs <code>'merchant1500'</code>: different time? Why not?</li>
+      <li><b>T4.</b> Keyset: fetch the <b>next</b> page after Step 8b.</li>
+    </ul>
+  </div>
+  <aside class="notes-src"><p>Answers in trainer/lab-04-answers.md. T1 is the important one: COALESCE(max, 0) breaks the proof (100 | 100).</p></aside>
+</section>
+
+<!-- 38 -->
+<section class="slide title">
+  <div class="body">
+    <p class="kicker">Lab 04 · Recap</p>
+    <h2 style="font-size:52px">Ask once, shrink early,<br>seek don't skip, and <i>prove it</i>.</h2>
+    <div class="gap"></div>
+    <p class="lead">82 s → 88 ms · 193 ms → 2.7 ms · 7,082 pages → 15 · always <code style="background:none;border:none;color:#9fe0a8">0 | 0</code></p>
+    <div class="gap"></div>
+    <p class="lead"><b>Next: Lab 05</b>, Capstone: The Slow Dashboard</p>
+  </div>
+</section>
+
+</div>
+
+<script src="assets/deck.js"></script>
+<script>
+/* OFFSET vs keyset simulator (slide 30) */
+(function () {
+  const root = document.querySelector('[data-pagesim]');
+  const grid = root.querySelector('.rows');
+  const count = root.querySelector('[data-count]'), msg = root.querySelector('[data-msg]');
+  for (let i = 1; i <= 120; i++) grid.append(Object.assign(document.createElement('div'), { className: 'r', textContent: i }));
+  const cells = grid.children;
+  let timer = null;
+  function reset() {
+    clearInterval(timer);
+    Array.from(cells).forEach(c => c.classList.remove('skip', 'page', 'cursor'));
+    count.textContent = '0'; msg.textContent = 'Click a button.';
+  }
+  function offset() {
+    reset(); let i = 0;
+    msg.textContent = 'OFFSET: read rows 1…100 and throw them away…';
+    timer = setInterval(() => {
+      if (i >= 110) { clearInterval(timer); msg.textContent = 'OFFSET done: 110 rows read to return 10.'; return; }
+      cells[i].classList.add(i < 100 ? 'skip' : 'page');
+      count.textContent = String(i + 1); i++;
+    }, 22);
+  }
+  function keyset() {
+    reset(); cells[99].classList.add('cursor');
+    msg.textContent = 'Keyset: seek in the index straight to the bookmark (row 100)…';
+    let i = 100;
+    timer = setInterval(() => {
+      if (i >= 110) { clearInterval(timer); msg.textContent = 'Keyset done: 10 rows read to return 10.'; return; }
+      cells[i].classList.add('page'); count.textContent = String(i - 99); i++;
+    }, 160);
+  }
+  root.querySelector('[data-run="offset"]').onclick = offset;
+  root.querySelector('[data-run="keyset"]').onclick = keyset;
+  root.querySelector('[data-run="reset"]').onclick = reset;
+})();
+</script>
+</body>
+</html>

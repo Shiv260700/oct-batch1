@@ -1,0 +1,961 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab 03 · Joins</title>
+<link rel="stylesheet" href="assets/deck.css">
+<style>
+  /* ---- join simulators ---- */
+  .jsim { background: var(--soft); border: 1px solid var(--line); border-radius: 14px; padding: 16px 22px; }
+  .jsim .cols3 { display: grid; grid-template-columns: 1fr 1fr 1.15fr; gap: 22px; align-items: start; }
+  .jsim h4 { margin: 0 0 8px; font-size: 15px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .chip { display: flex; justify-content: space-between; gap: 10px; font-family: var(--mono); font-size: 19px; background: #fff; border: 2px solid var(--line); border-radius: 9px; padding: 7px 12px; margin-bottom: 7px; transition: all .15s; }
+  .chip.cur { border-color: var(--blue); background: var(--blue-soft); }
+  .chip.match { border-color: var(--green); background: var(--green-soft); }
+  .chip.miss { border-color: var(--red); background: var(--red-soft); }
+  .chip.done { opacity: .45; }
+  .chip.out { border-color: var(--green); background: var(--green-soft); }
+  .buckets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .bucket { background: #fff; border: 2px dashed #c3cfdf; border-radius: 10px; min-height: 108px; padding: 6px 8px; font-size: 14px; color: var(--muted); }
+  .bucket.cur { border-color: var(--blue); border-style: solid; background: var(--blue-soft); }
+  .bucket .chip { font-size: 15px; padding: 4px 8px; margin: 6px 0 0; }
+  .ptr { font-weight: 800; color: var(--blue); width: 22px; display: inline-block; }
+  .jsim .sim-controls button { font: inherit; font-size: 18px; font-weight: 700; color: var(--ink); background: #fff; border: 1px solid #c8d3e2; border-radius: 9px; padding: 8px 16px; cursor: pointer; }
+  .jsim .sim-controls button:hover { border-color: var(--blue); color: var(--blue); }
+  .jsim .count { font-family: var(--mono); font-size: 20px; font-weight: 700; margin-left: 12px; }
+  .jsim .sim-msg { font-size: 21px; min-height: 30px; margin-top: 8px; }
+  .bars { display: flex; flex-direction: column; gap: 14px; }
+  .bars .b { display: flex; align-items: center; gap: 14px; font-size: 21px; }
+  .bars .b span:first-child { width: 170px; }
+  .bars .fill { height: 34px; border-radius: 8px; }
+  .mini td, .mini th { font-size: 19px; padding: 7px 12px; }
+</style>
+</head>
+<body data-deck="Lab 03 · Joins">
+<div class="deck">
+
+<!-- 1 -->
+<section class="slide title">
+  <div class="body">
+    <p class="kicker">SQL Performance Workshop · Lab 03</p>
+    <h1>Joins</h1>
+    <p class="lead">Three ways PostgreSQL combines tables,<br>and three traps that give <b>wrong answers</b>.</p>
+  </div>
+  <aside class="notes-src"><p>Lab 03 has two halves: speed (which join method, which index) and correctness (LEFT JOIN, NOT IN). Both come up daily in real jobs.</p></aside>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <p class="kicker">The story</p>
+  <h2>"Show the merchant names too"</h2>
+  <div class="body cols wide-left">
+    <div>
+      <p>Support wants <code>u1000@bank</code>'s payments <b>with merchant names</b>.</p>
+      <pre class="sql sm">SELECT t.txn_id, t.amount, m.merchant_name
+FROM transactions t
+JOIN merchants m
+  ON m.merchant_account = t.payee_account
+WHERE t.payer_account = 'u1000@bank';</pre>
+    </div>
+    <div class="card amber step">
+      <span class="label">And managers want</span>
+      <ul class="small">
+        <li>Spend per merchant category</li>
+        <li>Top corporate customers per city</li>
+        <li>Merchants never paid</li>
+      </ul>
+      <p class="small">All need <b>joins</b>.</p>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Ask: how many of you write JOINs every day? Has anyone wondered HOW the database matches the rows?</p></aside>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <p class="kicker">Today</p>
+  <h2>Six skills for this lab</h2>
+  <div class="body">
+    <div class="cols c3">
+      <div class="card blue"><span class="label">1 · Nested Loop</span><p>Lookup per row</p></div>
+      <div class="card blue"><span class="label">2 · Hash Join</span><p>Build a dictionary, then probe</p></div>
+      <div class="card blue"><span class="label">3 · Merge Join</span><p>Walk two sorted lists</p></div>
+    </div>
+    <div class="gap"></div>
+    <div class="cols c3">
+      <div class="card green"><span class="label">4 · Index FKs</span><p>PostgreSQL won't do it for you</p></div>
+      <div class="card red"><span class="label">5 · Avoid traps</span><p>LEFT JOIN + WHERE, NOT IN + NULL</p></div>
+      <div class="card amber"><span class="label">6 · Memory</span><p>Spot hash spills to disk</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <p class="kicker">Big picture</p>
+  <h2>A join matches rows by a key</h2>
+  <div class="body cols c3">
+    <table class="mini">
+      <tr><th>Payment</th><th>Payee</th><th class="num">₹</th></tr>
+      <tr><td>T1</td><td>M101</td><td class="num">500</td></tr>
+      <tr><td>T2</td><td>M102</td><td class="num">800</td></tr>
+      <tr><td>T3</td><td>M101</td><td class="num">200</td></tr>
+      <tr><td>T4</td><td>M103</td><td class="num">400</td></tr>
+    </table>
+    <table class="mini">
+      <tr><th>Merchant</th><th>Category</th></tr>
+      <tr><td>M101</td><td>Grocery</td></tr>
+      <tr><td>M102</td><td>Travel</td></tr>
+      <tr><td>M103</td><td>Food</td></tr>
+    </table>
+    <table class="mini step">
+      <tr><th>Payment</th><th>Category</th></tr>
+      <tr class="good"><td>T1</td><td>Grocery</td></tr>
+      <tr class="good"><td>T2</td><td>Travel</td></tr>
+      <tr class="good"><td>T3</td><td>Grocery</td></tr>
+      <tr class="good"><td>T4</td><td>Food</td></tr>
+    </table>
+  </div>
+  <div class="tip step">SQL says <b>what</b> to match (<code>ON t.payee = m.account</code>). The planner chooses <b>how</b>.</div>
+  <aside class="notes-src"><p>This tiny 4-payment / 3-merchant example is used in all three simulators. Keep it on screen while explaining.</p></aside>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <p class="kicker">Big picture</p>
+  <h2>One JOIN, three ways to run it</h2>
+  <div class="body cols c3">
+    <div class="card blue"><span class="label">Nested Loop</span><h3>📞 A phone call per row</h3><p>"Who is M101?" … "Who is M102?" …</p></div>
+    <div class="card green"><span class="label">Hash Join</span><h3>🐍 A dictionary</h3><p>Load merchants into memory once, look each payment up.</p></div>
+    <div class="card amber"><span class="label">Merge Join</span><h3>🧾 Two sorted queues</h3><p>Sort both, walk forward together.</p></div>
+  </div>
+  <aside class="notes-src"><p>Introduce the three analogies now; each gets its own section and simulator.</p></aside>
+</section>
+
+<!-- 6 -->
+<section class="slide section">
+  <div class="body">
+    <p class="kicker">Part 1</p>
+    <h2>Nested Loop<br>a lookup per row</h2>
+    <p class="lead">Step 1 in the lab guide</p>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <p class="kicker">Nested Loop · Concept</p>
+  <h2>For each outer row, find its inner rows</h2>
+  <div class="body cols wide-right">
+    <div class="analogy"><div class="icon">📞</div><p>For every payment, <b>phone</b> the merchant desk: "Who is M101?"<br><br>Fast if the desk has an <b>index</b> (directory). Slow if it reads the whole list each time.</p></div>
+    <div class="vflow">
+      <div class="box blue">Take next payment (outer)</div>
+      <div class="arrow">▼</div>
+      <div class="box">Find matching merchant(s) (inner)</div>
+      <div class="arrow">▼</div>
+      <div class="box green">Output the pair</div>
+      <div class="arrow">↺ repeat for every outer row</div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Without an index: outer rows × inner rows comparisons (4 × 3 = 12; 1M × 2,000 = 2 billion). With an index on the inner side: outer rows × a few pages.</p></aside>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <p class="kicker">Try it · Nested Loop</p>
+  <h2>Click through the comparisons</h2>
+  <div class="body top">
+    <div class="jsim" id="sim-nl">
+      <div class="cols3">
+        <div><h4>Outer: payments</h4><div data-outer></div></div>
+        <div><h4>Inner: merchants</h4><div data-inner></div></div>
+        <div><h4>Output</h4><div data-out></div></div>
+      </div>
+      <div class="sim-controls">
+        <button data-next>Next ▶</button>
+        <button data-mode>Inner index: OFF</button>
+        <button data-reset>↺ Reset</button>
+        <span class="count">comparisons: <span data-count>0</span></span>
+      </div>
+      <div class="sim-msg" data-msg>Click Next. Without an index, every payment is compared with every merchant.</div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Run it with the index OFF: 12 comparisons. Reset, switch index ON: 4 direct lookups. Ask: what happens with 1 million payments and 2,000 merchants without an index?</p></aside>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <p class="kicker">Step 1 · Predict</p>
+  <h2>u1000's payments with merchant names</h2>
+  <div class="body">
+    <pre class="sql">EXPLAIN (ANALYZE, BUFFERS)
+SELECT t.txn_id, t.amount, m.merchant_name
+FROM transactions t
+JOIN merchants m ON m.merchant_account = t.payee_account
+WHERE t.payer_account = 'u1000@bank';</pre>
+    <div class="gap"></div>
+    <div class="predict">103 payments. For each one, how will PostgreSQL find the merchant? Which part will be slow?</div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <p class="kicker">Step 1 · See</p>
+  <h2>Nested Loop: inner lookup ran 103 times</h2>
+  <div class="body top">
+    <pre class="plan xs"> <mark>Nested Loop</mark>  (... actual time=0.307..41.178 rows=102 loops=1)
+   Buffers: shared hit=12912
+   ->  Seq Scan on transactions t  (... rows=103 loops=1)                              <span class="step"><span class="bad">① outer: slow full scan</span></span>
+         Filter: (payer_account = 'u1000@bank'::text)
+         <mark class="red">Rows Removed by Filter: 999897</mark>
+         Buffers: shared hit=12606
+   ->  Index Scan using merchants_pkey on merchants m  (... rows=1 <mark>loops=103</mark>)      <span class="step"><span class="good">② inner: fast lookup ×103</span></span>
+         <mark class="green">Index Cond: (merchant_account = t.payee_account)</mark>
+         Buffers: shared hit=306
+ Execution Time: 41.189 ms</pre>
+    <div class="gap"></div>
+    <div class="rule step">Nested Loop is great when the <b>outer side is small</b> and the <b>inner side has an index</b>.</div>
+  </div>
+  <aside class="notes-src"><p>103 lookups × 3 pages ≈ 306 pages: cheap. The 12,606-page outer Seq Scan is the slow part. We fix that in Step 4 by indexing the foreign key.</p></aside>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <p class="kicker">Step 1 · Puzzle</p>
+  <h2>103 payments, but only 102 rows. Why?</h2>
+  <div class="body cols">
+    <pre class="sql sm">SELECT count(*)               AS payments,
+       count(t.payee_account) AS with_payee
+FROM transactions t
+WHERE t.payer_account = 'u1000@bank';
+
+--  payments | with_payee
+--       103 |        102</pre>
+    <div>
+      <div class="answer step">One payment is <b>PENDING</b> with <b>no payee yet</b> (<code>NULL</code>).<br>An inner join keeps only rows that <b>match</b>, and NULL matches nothing.</div>
+      <div class="gap"></div>
+      <div class="tip step">Remember this NULL. It comes back in Step 8 as a <b>trap</b>.</div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Let the room guess before revealing. Typical guesses: duplicate, merchant missing. Real reason: NULL payee.</p></aside>
+</section>
+
+<!-- 12 -->
+<section class="slide section">
+  <div class="body">
+    <p class="kicker">Part 2</p>
+    <h2>Hash Join<br>build once, look up fast</h2>
+    <p class="lead">Step 2 in the lab guide</p>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <p class="kicker">Hash Join · Concept</p>
+  <h2>Think: Python dictionary</h2>
+  <div class="body cols">
+    <div>
+      <pre class="sql sm"># ① BUILD: read the small table once
+merchants = {"M101": "Grocery",
+             "M102": "Travel",
+             "M103": "Food"}
+
+# ② PROBE: read each payment once
+for t in payments:
+    category = merchants[t.payee]</pre>
+    </div>
+    <div class="vflow">
+      <div class="box blue"><b>① Build</b>small table → memory lookup table (<code>Hash</code> node)</div>
+      <div class="arrow">▼</div>
+      <div class="box green"><b>② Probe</b>each big-table row → one quick lookup</div>
+      <div class="gap"></div>
+      <div class="tip step">Each table is read <b>only once</b>. No index needed.</div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Freshers who know Python dicts get this immediately. A hash table puts each key into a "bucket" computed from the key, so lookups don't need to search the whole list.</p></aside>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <p class="kicker">Try it · Hash Join</p>
+  <h2>Build the buckets, then probe them</h2>
+  <div class="body top">
+    <div class="jsim" id="sim-hash">
+      <div class="cols3">
+        <div><h4>Merchants (build)</h4><div data-inner></div><h4 style="margin-top:12px">Payments (probe)</h4><div data-outer></div></div>
+        <div><h4>Hash table: 3 buckets</h4><div class="buckets" data-buckets></div></div>
+        <div><h4>Output</h4><div data-out></div></div>
+      </div>
+      <div class="sim-controls">
+        <button data-next>Next ▶</button>
+        <button data-reset>↺ Reset</button>
+        <span class="count">lookups: <span data-count>0</span></span>
+      </div>
+      <div class="sim-msg" data-msg>Phase ① Build: put each merchant into its bucket.</div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>3 build steps + 4 probe steps = 7 steps total, versus 12 comparisons for the plain nested loop. With 1M payments the difference is enormous.</p></aside>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <p class="kicker">Step 2 · See</p>
+  <h2>Category totals over 1,000,000 payments</h2>
+  <div class="body top">
+    <pre class="sql xs">SELECT m.category, count(*) AS payments, sum(t.amount) AS total
+FROM transactions t JOIN merchants m ON m.merchant_account = t.payee_account
+GROUP BY m.category ORDER BY total DESC;</pre>
+    <div class="gap"></div>
+    <pre class="plan xs"> Sort  (... rows=6 loops=1)
+   ->  HashAggregate  (... rows=6 loops=1)
+         ->  <mark>Hash Join</mark>  (... actual time=0.280..188.868 rows=998018 loops=1)
+               <mark>Hash Cond: (t.payee_account = m.merchant_account)</mark>
+               ->  Seq Scan on transactions t  (... rows=1000000 loops=1)     <span class="step"><span class="good">② probe</span></span>
+               ->  Hash  (... rows=2000 loops=1)                               <span class="step"><span class="good">① build</span></span>
+                     <mark>Buckets: 2048  Batches: 1  Memory Usage: 119kB</mark>
+                     ->  Seq Scan on merchants m  (... rows=2000 loops=1)
+ Execution Time: 304.853 ms</pre>
+  </div>
+  <aside class="notes-src"><p>Read bottom-up: merchants scanned into the Hash (build), then each payment probes it. 998,018 rows, not 1,000,000: the 1,982 NULL payees match nothing.</p></aside>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <p class="kicker">Step 2 · Read the Hash node</p>
+  <h2>Three numbers tell you if it fit in memory</h2>
+  <div class="body">
+    <table>
+      <tr><th>Field</th><th>Value</th><th>Meaning</th></tr>
+      <tr class="step"><td><code>Buckets</code></td><td>2048</td><td>Slots in the lookup table</td></tr>
+      <tr class="step good"><td><code>Batches</code></td><td>1</td><td>Whole table fit in memory: <b>good</b></td></tr>
+      <tr class="step"><td><code>Memory Usage</code></td><td>119kB</td><td>Size of the lookup table</td></tr>
+    </table>
+    <div class="gap"></div>
+    <div class="rule step">Hash Join is the workhorse for <b>large joins on <code>=</code></b>. Build from the <b>smaller</b> side.</div>
+  </div>
+  <aside class="notes-src"><p>Batches greater than 1 means a spill to disk. We'll provoke that on purpose in Step 9.</p></aside>
+</section>
+
+<!-- 17 -->
+<section class="slide section">
+  <div class="body">
+    <p class="kicker">Part 3</p>
+    <h2>Merge Join<br>two sorted lists</h2>
+    <p class="lead">Step 3 in the lab guide</p>
+  </div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <p class="kicker">Merge Join · Concept</p>
+  <h2>Sort both sides, then walk forward together</h2>
+  <div class="body cols wide-right">
+    <div class="analogy"><div class="icon">🧾</div><p>Two queues, both <b>sorted by merchant</b>. Compare the two fronts:<br>• equal → output a pair<br>• smaller one → step it forward</p></div>
+    <div class="vflow">
+      <div class="box amber">Sort payments by payee</div>
+      <div class="arrow">+</div>
+      <div class="box amber">Sort merchants by account</div>
+      <div class="arrow">▼</div>
+      <div class="box green">Walk both lists once, in step</div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>The walk itself is very cheap. The cost is the SORT, unless an index already provides sorted order.</p></aside>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <p class="kicker">Try it · Merge Join</p>
+  <h2>Move the two pointers</h2>
+  <div class="body top">
+    <div class="jsim" id="sim-merge">
+      <div class="cols3">
+        <div><h4>Payments (sorted by payee)</h4><div data-outer></div></div>
+        <div><h4>Merchants (sorted)</h4><div data-inner></div></div>
+        <div><h4>Output</h4><div data-out></div></div>
+      </div>
+      <div class="sim-controls">
+        <button data-next>Next ▶</button>
+        <button data-reset>↺ Reset</button>
+        <span class="count">comparisons: <span data-count>0</span></span>
+      </div>
+      <div class="sim-msg" data-msg>Both lists are sorted. ▶ marks the current row on each side.</div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Notice the pointers only ever move forward: each list is read once. Ask: what did it cost to get the lists sorted?</p></aside>
+</section>
+
+<!-- 20 -->
+<section class="slide">
+  <p class="kicker">Step 3 · Run</p>
+  <h2>Force a Merge Join, only to see it</h2>
+  <div class="body cols wide-left">
+    <pre class="sql sm">BEGIN;
+SET LOCAL enable_hashjoin = off;
+SET LOCAL enable_nestloop = off;
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT m.category, count(*), sum(t.amount)
+FROM transactions t
+JOIN merchants m
+  ON m.merchant_account = t.payee_account
+GROUP BY m.category;
+
+ROLLBACK;</pre>
+    <div>
+      <div class="predict">Hash Join took ~305 ms. Will Merge Join be faster or slower?</div>
+      <div class="gap"></div>
+      <div class="warn step"><code>SET LOCAL</code> + <code>ROLLBACK</code>: for learning only. Never switch join methods off in real code.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 21 -->
+<section class="slide">
+  <p class="kicker">Step 3 · See</p>
+  <h2>Sorting 1 million rows spilled to disk</h2>
+  <div class="body top">
+    <pre class="plan xs">         ->  <mark>Merge Join</mark>  (... actual time=1096.268..1256.752 rows=998018 loops=1)
+               Merge Cond: (t.payee_account = m.merchant_account)
+               ->  Sort  (... rows=998019 loops=1)
+                     Sort Key: t.payee_account
+                     <mark class="red">Sort Method: external merge  Disk: 28664kB</mark>
+                     ->  Seq Scan on transactions t  (... rows=1000000 loops=1)
+               ->  Sort  (... rows=2000 loops=1)
+                     Sort Method: quicksort  Memory: 128kB
+ Execution Time: 1382.149 ms</pre>
+    <div class="gap"></div>
+    <div class="bars step">
+      <div class="b"><span>Hash Join</span><div class="fill" style="width:150px;background:var(--green)"></div><b>305 ms</b></div>
+      <div class="b"><span>Merge Join</span><div class="fill" style="width:680px;background:var(--red)"></div><b>1,382 ms</b></div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>The planner priced this plan as more expensive and was right. Ignore the JIT lines learners will see at the bottom; JIT compiles expressions for big queries.</p></aside>
+</section>
+
+<!-- 22 -->
+<section class="slide">
+  <p class="kicker">Summary</p>
+  <h2>Which join wins when?</h2>
+  <div class="body">
+    <table>
+      <tr><th>Method</th><th>Wins when</th><th>Watch for</th></tr>
+      <tr class="step"><td><b>Nested Loop</b></td><td>Few outer rows + index on inner side</td><td>Huge <code>loops=</code> with no inner index</td></tr>
+      <tr class="step"><td><b>Hash Join</b></td><td>Big joins on <code>=</code>, one side fits in memory</td><td><code>Batches &gt; 1</code> (spill)</td></tr>
+      <tr class="step"><td><b>Merge Join</b></td><td>Both sides already sorted (e.g. by index)</td><td>Big <code>Sort</code>, <code>external merge</code></td></tr>
+    </table>
+    <div class="gap"></div>
+    <div class="rule step">You don't choose the method. You give the planner <b>good indexes</b> and <b>fresh statistics</b>.</div>
+  </div>
+</section>
+
+<!-- 23 -->
+<section class="slide section">
+  <div class="body">
+    <p class="kicker">Part 4</p>
+    <h2>Foreign keys<br>are not indexed</h2>
+    <p class="lead">Step 4 in the lab guide</p>
+  </div>
+</section>
+
+<!-- 24 -->
+<section class="slide">
+  <p class="kicker">Step 4 · Predict</p>
+  <h2>Is the foreign key column indexed?</h2>
+  <div class="body cols">
+    <pre class="plan sm">=# \d transactions
+ ...
+Indexes:
+    "transactions_pkey" PRIMARY KEY,
+                        btree (txn_id)
+Foreign-key constraints:
+    "transactions_payee_fk" FOREIGN KEY
+      (payee_account) REFERENCES merchants
+    "transactions_payer_fk" FOREIGN KEY
+      (payer_account) REFERENCES accounts</pre>
+    <div>
+      <div class="predict">Top 5 CORPORATE customers in Hyderabad. Will PostgreSQL use an index on <code>payer_account</code>?</div>
+      <div class="gap"></div>
+      <div class="answer step">There is <b>no</b> such index. Foreign key ≠ index.</div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Read the Indexes section aloud: only the primary key. Many developers assume FKs are indexed. That's true in MySQL InnoDB, not in PostgreSQL.</p></aside>
+</section>
+
+<!-- 25 -->
+<section class="slide">
+  <p class="kicker">Step 4 · See</p>
+  <h2>Index the FK: Hash Join → Nested Loop</h2>
+  <div class="body top">
+    <pre class="sql xs">CREATE INDEX idx_txn_payer ON transactions (payer_account);</pre>
+    <div class="gap"></div>
+    <pre class="plan xs">               ->  <mark>Nested Loop</mark>  (... actual time=0.042..4.119 rows=4541 loops=1)
+                     ->  Seq Scan on accounts a  (... rows=48 loops=1)
+                           Filter: ((segment = 'CORPORATE'::text) AND (city = 'Hyderabad'::text))
+                     ->  Bitmap Heap Scan on transactions t  (... rows=95 <mark>loops=48</mark>)
+                           ->  Bitmap Index Scan on <mark>idx_txn_payer</mark>  (... rows=95 loops=48)
+ Execution Time: 4.745 ms</pre>
+    <div class="gap"></div>
+    <table class="mini">
+      <tr><th></th><th>Join</th><th class="num">Pages</th><th class="num">Time</th></tr>
+      <tr class="bad"><td>No FK index</td><td>Hash Join + Seq Scan (1M rows)</td><td class="num">12,699</td><td class="num">~110 ms</td></tr>
+      <tr class="good"><td>With <code>idx_txn_payer</code></td><td>Nested Loop, index ×48</td><td class="num">4,760</td><td class="num">~5 ms</td></tr>
+    </table>
+  </div>
+  <aside class="notes-src"><p>Only 48 accounts match, so 48 index lookups beat scanning 1M payments. Same 5 result rows before and after. Rule: PostgreSQL indexes primary keys automatically, never foreign keys.</p></aside>
+</section>
+
+<!-- 26 -->
+<section class="slide section">
+  <div class="body">
+    <p class="kicker">Part 5</p>
+    <h2>Three tables<br>join order &amp; pushdown</h2>
+    <p class="lead">Step 5 in the lab guide</p>
+  </div>
+</section>
+
+<!-- 27 -->
+<section class="slide">
+  <p class="kicker">Step 5 · See</p>
+  <h2>WHERE filters run inside the scans</h2>
+  <div class="body top">
+    <pre class="plan xs">         ->  Hash Join  (... rows=18397 loops=1)                                    <span class="step"><span class="good">③ ⨝ PREMIUM accounts</span></span>
+               Hash Cond: (t.payer_account = a.account_id)
+               ->  Hash Join  (... rows=127121 loops=1)                             <span class="step"><span class="good">② payments ⨝ Mumbai merchants</span></span>
+                     Hash Cond: (t.payee_account = m.merchant_account)
+                     ->  Seq Scan on transactions t  (... rows=1000000 loops=1)
+                     ->  Hash
+                           ->  Seq Scan on merchants m  (... rows=281 loops=1)       <span class="step"><span class="good">① pushed down</span></span>
+                                 <mark>Filter: (city = 'Mumbai'::text)</mark>
+               ->  Hash
+                     ->  Seq Scan on accounts a  (... rows=1500 loops=1)            <span class="step"><span class="good">① pushed down</span></span>
+                           <mark>Filter: (segment = 'PREMIUM'::text)</mark></pre>
+    <div class="gap"></div>
+    <div class="cols">
+      <div class="tip step"><b>Pushdown:</b> filters shrink each table <i>before</i> joining: 2,000 → 281, 10,000 → 1,500.</div>
+      <div class="tip step"><b>Join order:</b> written differently (merchants first)? <b>Identical plan.</b></div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Run the second query in lab03.sql (tables in a different order) with EXPLAIN: same plan. For inner joins the planner decides the order; your job is good filters and indexes.</p></aside>
+</section>
+
+<!-- 28 -->
+<section class="slide section">
+  <div class="body">
+    <p class="kicker">Part 6</p>
+    <h2>Correctness traps<br>fast but wrong</h2>
+    <p class="lead">Steps 6–8 in the lab guide</p>
+  </div>
+</section>
+
+<!-- 29 -->
+<section class="slide">
+  <p class="kicker">Step 6 · The LEFT JOIN trap</p>
+  <h2>Failed payments per merchant, all merchants</h2>
+  <div class="body cols">
+    <div>
+      <div class="code-label">A · conditions in ON</div>
+      <pre class="sql xs">FROM merchants m
+LEFT JOIN transactions t
+  ON t.payee_account = m.merchant_account
+ AND t.status = 'FAILED'
+ AND t.txn_ts >= '2026-03-31'</pre>
+      <div class="gap"></div>
+      <div class="stat step"><div class="num green">2,000</div><div class="cap">merchants listed ✅</div></div>
+    </div>
+    <div>
+      <div class="code-label">B · conditions in WHERE</div>
+      <pre class="sql xs">FROM merchants m
+LEFT JOIN transactions t
+  ON t.payee_account = m.merchant_account
+WHERE t.status = 'FAILED'
+  AND t.txn_ts >= '2026-03-31'</pre>
+      <div class="gap"></div>
+      <div class="stat step"><div class="num red">439</div><div class="cap">merchants listed ❌</div></div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Ask the room to predict before revealing. Then: where did 1,561 merchants go? Merchants with no failed payment get NULL in t.status; WHERE t.status = 'FAILED' removes them. The LEFT JOIN quietly became an inner join.</p></aside>
+</section>
+
+<!-- 30 -->
+<section class="slide">
+  <p class="kicker">Step 6 · Why</p>
+  <h2>WHERE runs <i>after</i> the LEFT JOIN</h2>
+  <div class="body">
+    <div class="flow">
+      <div class="box"><b>LEFT JOIN</b>merchant with no failed payment → kept, <code>t.status = NULL</code></div>
+      <div class="arrow">→</div>
+      <div class="box red"><b>WHERE t.status = 'FAILED'</b>NULL ≠ 'FAILED' → row removed</div>
+      <div class="arrow">→</div>
+      <div class="box red"><b>1,561 merchants</b>silently missing</div>
+    </div>
+    <div class="gap"></div><div class="gap"></div>
+    <div class="rule step">With LEFT JOIN, conditions on the <b>right-hand table</b> go in <b>ON</b>, not WHERE.</div>
+  </div>
+</section>
+
+<!-- 31 -->
+<section class="slide">
+  <p class="kicker">Step 7 · Predict</p>
+  <h2>Which Pune merchants have been paid at least once?</h2>
+  <div class="body cols">
+    <div>
+      <div class="code-label">A · JOIN + DISTINCT</div>
+      <pre class="sql xs">SELECT DISTINCT m.merchant_account,
+       m.merchant_name
+FROM merchants m
+JOIN transactions t
+  ON t.payee_account = m.merchant_account
+WHERE m.city = 'Pune';</pre>
+    </div>
+    <div>
+      <div class="code-label">B · EXISTS</div>
+      <pre class="sql xs">SELECT m.merchant_account, m.merchant_name
+FROM merchants m
+WHERE m.city = 'Pune'
+  AND EXISTS (
+    SELECT 1 FROM transactions t
+    WHERE t.payee_account = m.merchant_account);</pre>
+    </div>
+  </div>
+  <div class="predict">Both return 193 merchants. Which one does less work? (First: <code>CREATE INDEX idx_txn_payee ON transactions (payee_account);</code>)</div>
+</section>
+
+<!-- 32 -->
+<section class="slide">
+  <p class="kicker">Step 7 · See</p>
+  <h2>EXISTS stops at the first match</h2>
+  <div class="body top">
+    <pre class="plan xs">A:  HashAggregate  (... rows=193 loops=1)
+      ->  Nested Loop  (... <mark class="red">rows=97662</mark> loops=1)
+            ->  Index Only Scan using idx_txn_payee ... (... <mark class="red">rows=483</mark> loops=202)
+    Execution Time: 22.200 ms
+
+B:  <mark class="green">Nested Loop Semi Join</mark>  (... rows=193 loops=1)
+      ->  Index Only Scan using idx_txn_payee ... (... <mark class="green">rows=1</mark> loops=202)
+    Execution Time: 0.659 ms</pre>
+    <div class="gap"></div>
+    <div class="cols">
+      <div class="card"><span class="label">Semi Join</span><p>"Return the merchant <b>once</b> if <b>any</b> payment exists."</p></div>
+      <div class="rule step">"Has at least one?" → <b>EXISTS</b>, not JOIN + DISTINCT.</div>
+    </div>
+  </div>
+  <aside class="notes-src"><p>A builds 97,662 rows only to throw duplicates away. B reads one index entry per merchant. ~33× faster, same 193 rows.</p></aside>
+</section>
+
+<!-- 33 -->
+<section class="slide">
+  <p class="kicker">Step 8 · NOT EXISTS</p>
+  <h2>Merchants never paid: an Anti Join</h2>
+  <div class="body top">
+    <pre class="sql xs">SELECT m.merchant_account, m.merchant_name
+FROM merchants m
+WHERE NOT EXISTS (SELECT 1 FROM transactions t
+                  WHERE t.payee_account = m.merchant_account);</pre>
+    <div class="gap"></div>
+    <pre class="plan xs"> <mark class="green">Nested Loop Anti Join</mark>  (... actual time=6.073..6.176 <mark>rows=50</mark> loops=1)
+   ->  Seq Scan on merchants m  (... rows=2000 loops=1)
+   ->  Index Only Scan using idx_txn_payee on transactions t  (... rows=1 loops=2000)
+ Execution Time: 6.183 ms</pre>
+    <div class="gap"></div>
+    <div class="card step"><span class="label">Anti Join</span><p>"Keep the merchant only if <b>no</b> payment exists." → <b>50</b> merchants (merchant1951 … merchant2000)</p></div>
+  </div>
+</section>
+
+<!-- 34 -->
+<section class="slide">
+  <p class="kicker">Step 8 · The NULL trap</p>
+  <h2>NOT IN with a NULL is never true</h2>
+  <div class="body cols">
+    <div>
+      <pre class="sql sm">SELECT 'merchant1'
+       NOT IN ('merchant2', NULL);
+
+-- result:  NULL   (not TRUE!)</pre>
+      <div class="gap"></div>
+      <div class="analogy step"><div class="icon">❓</div><p>"Is merchant1 <b>not</b> in {merchant2, <b>unknown</b>}?"<br>SQL: "can't be sure; the unknown might be merchant1."</p></div>
+    </div>
+    <div>
+      <table class="mini">
+        <tr><th>Query (real data)</th><th class="num">Rows</th></tr>
+        <tr class="good step"><td>NOT EXISTS (no PENDING payment)</td><td class="num">155</td></tr>
+        <tr class="bad step"><td>NOT IN (… PENDING payees)</td><td class="num">0</td></tr>
+      </table>
+      <div class="gap"></div>
+      <p class="small step"><code>payee_account</code> has <b>1,982 NULLs</b> (pending payments).</p>
+    </div>
+  </div>
+  <aside class="notes-src"><p>Do the one-liner first. Then the real-data proof. Same question, 155 vs 0: NOT IN silently returns nothing.</p></aside>
+</section>
+
+<!-- 35 -->
+<section class="slide">
+  <p class="kicker">Step 8 · Also slow</p>
+  <h2>Full NOT IN: EXPLAIN only, never ANALYZE</h2>
+  <div class="body top">
+    <pre class="plan xs"> Seq Scan on merchants m  (cost=0.42..<mark class="red">30955045.43</mark> rows=1000 width=30)
+   Filter: (NOT (ANY (merchant_account = (SubPlan 1).col1)))
+   SubPlan 1
+     ->  <mark class="red">Materialize</mark>  (cost=0.42..28455.42 rows=1000000 width=11)
+           ->  Index Only Scan using idx_txn_payee on transactions t</pre>
+    <div class="gap"></div>
+    <div class="cols c3">
+      <div class="stat step"><div class="num red">30.9M</div><div class="cap">cost (NOT IN)</div></div>
+      <div class="stat step"><div class="num green">1,012</div><div class="cap">cost (NOT EXISTS)</div></div>
+      <div class="stat step"><div class="num red">86 s</div><div class="cap">measured… returning 0 rows</div></div>
+    </div>
+    <div class="gap"></div>
+    <div class="rule step">"Has none?" → <b>NOT EXISTS</b>. NOT IN on a nullable column is wrong <i>and</i> can be very slow.</div>
+  </div>
+  <aside class="notes-src"><p>The 1M-value list doesn't fit in work_mem as a hash, so PostgreSQL re-reads it for each of the 2,000 merchants. If anyone ran it with ANALYZE: Ctrl+C.</p></aside>
+</section>
+
+<!-- 36 -->
+<section class="slide section">
+  <div class="body">
+    <p class="kicker">Part 7</p>
+    <h2>Memory<br>when the hash spills</h2>
+    <p class="lead">Step 9 in the lab guide</p>
+  </div>
+</section>
+
+<!-- 37 -->
+<section class="slide">
+  <p class="kicker">Step 9 · See</p>
+  <h2>Less <code>work_mem</code> → batches on disk</h2>
+  <div class="body top">
+    <pre class="sql xs">BEGIN;
+SET LOCAL work_mem = '64kB';   -- default is 4MB
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT a.segment, count(*), sum(t.amount)
+FROM transactions t JOIN accounts a ON a.account_id = t.payer_account
+GROUP BY a.segment;
+ROLLBACK;</pre>
+    <div class="gap"></div>
+    <table class="mini">
+      <tr><th></th><th>work_mem = 4MB</th><th>work_mem = 64kB</th></tr>
+      <tr class="step"><td>Hash node</td><td><code>Batches: 1  Memory Usage: 626kB</code></td><td><code>Batches: 8  Memory Usage: 81kB</code></td></tr>
+      <tr class="step"><td>Temp files</td><td>none</td><td><code>temp read=3990 written=3990</code></td></tr>
+      <tr class="step"><td>Time</td><td>~297 ms</td><td>~364 ms</td></tr>
+    </table>
+  </div>
+  <aside class="notes-src"><p>work_mem is per sort/hash step, per connection. Don't raise it server-wide to fix one query: 100 connections × several steps each adds up fast.</p></aside>
+</section>
+
+<!-- 38 -->
+<section class="slide">
+  <p class="kicker">Spot a spill</p>
+  <h2>Three phrases that mean "used the disk"</h2>
+  <div class="body">
+    <div class="cols c3">
+      <div class="card red"><span class="label">Hash</span><p><code>Batches: 8</code></p></div>
+      <div class="card red"><span class="label">Sort</span><p><code>external merge Disk: 28664kB</code></p></div>
+      <div class="card red"><span class="label">Buffers</span><p><code>temp read=… written=…</code></p></div>
+    </div>
+    <div class="gap"></div>
+    <div class="rule step">Fix the query first (fewer rows, better index). Raise <code>work_mem</code> only for <b>that</b> query, with <code>SET LOCAL</code>.</div>
+  </div>
+</section>
+
+<!-- 39 -->
+<section class="slide">
+  <p class="kicker">Cheat sheet</p>
+  <h2>Join patterns to remember</h2>
+  <div class="body">
+    <table>
+      <tr><th>Situation</th><th>Do this</th></tr>
+      <tr class="step"><td>Join on a foreign key column</td><td><b>Index the FK column</b></td></tr>
+      <tr class="step"><td>"Has at least one?"</td><td><code>EXISTS</code> → Semi Join</td></tr>
+      <tr class="step"><td>"Has none?"</td><td><code>NOT EXISTS</code> → Anti Join (never <code>NOT IN</code> on nullable)</td></tr>
+      <tr class="step"><td>LEFT JOIN + filter on right table</td><td>Put the filter in <code>ON</code></td></tr>
+      <tr class="step"><td><code>Batches &gt; 1</code> / <code>external merge</code></td><td>Spill: reduce rows or raise <code>work_mem</code> locally</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- 40 -->
+<section class="slide">
+  <p class="kicker">Avoid these</p>
+  <h2>Common mistakes</h2>
+  <div class="body cols">
+    <ul>
+      <li>Assuming foreign keys are indexed</li>
+      <li>Filtering a LEFT JOIN's right table in <code>WHERE</code></li>
+      <li><code>NOT IN (subquery)</code> on a nullable column</li>
+      <li><code>JOIN</code> + <code>DISTINCT</code> to test existence</li>
+    </ul>
+    <ul>
+      <li>Leaving <code>enable_hashjoin = off</code> in a session</li>
+      <li>Thinking table order in <code>FROM</code> controls join order</li>
+      <li>Raising <code>work_mem</code> server-wide for one query</li>
+    </ul>
+  </div>
+</section>
+
+<!-- 41 -->
+<section class="slide">
+  <p class="kicker">Quick quiz</p>
+  <h2>Check yourself</h2>
+  <div class="body small">
+    <table>
+      <tr><th>Question</th><th>Answer</th></tr>
+      <tr><td>1. Inner Index Scan shows <code>loops=103</code>. Meaning?</td><td class="step">Lookup ran 103 times, once per outer row</td></tr>
+      <tr><td>2. Which table goes into the <code>Hash</code> node?</td><td class="step">Usually the smaller one</td></tr>
+      <tr><td>3. <code>Batches: 8</code>: good or bad?</td><td class="step">Bad: spilled to disk</td></tr>
+      <tr><td>4. Are foreign keys indexed automatically?</td><td class="step">No. Only PK / UNIQUE</td></tr>
+      <tr><td>5. <code>5 NOT IN (1, 2, NULL)</code> = ?</td><td class="step">NULL, so no rows</td></tr>
+      <tr><td>6. "Customers who bought at least once"?</td><td class="step"><code>EXISTS</code></td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- 42 -->
+<section class="slide">
+  <p class="kicker">Your turn</p>
+  <h2>Try it yourself</h2>
+  <div class="body small">
+    <ul>
+      <li><b>T1.</b> Re-run the Step 1 query now that <code>idx_txn_payer</code> exists. Which join appears? Why did it change?</li>
+      <li><b>T2.</b> Which <b>accounts</b> never made a payment? Use <code>NOT EXISTS</code>. How many? Which join node?</li>
+      <li><b>T3.</b> With the correct Step 6 report, how many merchants had <b>zero</b> failed payments on 31 March?</li>
+      <li><b>T4.</b> Add <code>WHERE t.payee_account IS NOT NULL</code> to the NOT IN subquery. <code>EXPLAIN</code> only: correct now? cheap now? better fix?</li>
+    </ul>
+  </div>
+  <aside class="notes-src"><p>Answers in trainer/lab-03-answers.md. T1: Hash Join (~1 ms), the planner re-prices after the index. T2: 100 accounts, Nested Loop Anti Join. T3: 1,561. T4: correct (50) but still cost ~33M; NOT EXISTS is the fix.</p></aside>
+</section>
+
+<!-- 43 -->
+<section class="slide title">
+  <div class="body">
+    <p class="kicker">Lab 03 · Recap</p>
+    <h2 style="font-size:52px">Index your foreign keys.<br>Ask <i>exists?</i> with EXISTS.<br>Keep LEFT JOIN filters in ON.</h2>
+    <div class="gap"></div>
+    <p class="lead">Nested Loop · Hash Join · Merge Join: the planner picks; you give it indexes.</p>
+    <div class="gap"></div>
+    <p class="lead"><b>Next: Lab 04</b>, Rewriting Queries for Performance.</p>
+  </div>
+</section>
+
+</div>
+
+<script src="assets/deck.js"></script>
+<script>
+/* ===== Join simulators: 4 payments x 3 merchants ===== */
+(function () {
+  const PAY = [['T1', 'M101', 500], ['T2', 'M102', 800], ['T3', 'M101', 200], ['T4', 'M103', 400]];
+  const MER = [['M101', 'Grocery'], ['M102', 'Travel'], ['M103', 'Food']];
+  const cat = k => MER.find(m => m[0] === k)[1];
+  const chip = (txt, right, cls) => '<div class="chip ' + (cls || '') + '"><span>' + txt + '</span><span>' + (right || '') + '</span></div>';
+
+  function wire(root, api) {
+    root.querySelector('[data-next]').onclick = api.next;
+    root.querySelector('[data-reset]').onclick = api.reset;
+    const mode = root.querySelector('[data-mode]');
+    if (mode) mode.onclick = api.mode;
+    api.reset();
+  }
+
+  /* ---- Nested Loop ---- */
+  (function () {
+    const root = document.getElementById('sim-nl');
+    const $ = s => root.querySelector(s);
+    let o, i, count, out, useIndex = false, done;
+    function draw(curO, curI, state) {
+      $('[data-outer]').innerHTML = PAY.map((p, k) => chip(p[0], '→ ' + p[1], k < curO ? 'done' : k === curO ? 'cur' : '')).join('');
+      $('[data-inner]').innerHTML = MER.map((m, k) => chip(m[0], m[1], k === curI ? state : '')).join('');
+      $('[data-out]').innerHTML = out.map(r => chip(r[0], r[1], 'out')).join('');
+      $('[data-count]').textContent = count;
+    }
+    const api = {
+      reset() { o = 0; i = 0; count = 0; out = []; done = false; draw(-1, -1); $('[data-mode]').textContent = 'Inner index: ' + (useIndex ? 'ON' : 'OFF');
+        $('[data-msg]').textContent = useIndex ? 'Index ON: each payment jumps straight to its merchant.' : 'Index OFF: every payment is compared with every merchant.'; },
+      mode() { useIndex = !useIndex; api.reset(); },
+      next() {
+        if (done) return;
+        const p = PAY[o];
+        if (useIndex) {
+          const k = MER.findIndex(m => m[0] === p[1]);
+          count++; out.push([p[0], cat(p[1])]); draw(o, k, 'match');
+          $('[data-msg]').textContent = p[0] + ': index lookup ' + p[1] + ' → ' + cat(p[1]) + ' (1 lookup)';
+          o++;
+        } else {
+          const m = MER[i]; count++;
+          const ok = m[0] === p[1];
+          if (ok) out.push([p[0], m[1]]);
+          draw(o, i, ok ? 'match' : 'miss');
+          $('[data-msg]').textContent = p[0] + '.payee ' + p[1] + ' = ' + m[0] + '?  ' + (ok ? '✓ match → output' : '✗ no');
+          i++; if (i === MER.length) { i = 0; o++; }
+        }
+        if (o === PAY.length) { done = true;
+          $('[data-msg]').textContent += useIndex ? '   Done: 4 lookups.' : '   Done: 4 × 3 = 12 comparisons.'; }
+      }
+    };
+    wire(root, api);
+  })();
+
+  /* ---- Hash Join ---- */
+  (function () {
+    const root = document.getElementById('sim-hash');
+    const $ = s => root.querySelector(s);
+    const bucketOf = k => (parseInt(k.slice(-1), 10) - 1) % 3;   // M101 -> 0, M102 -> 1, M103 -> 2
+    let step, buckets, out, count;
+    function draw(curB, curP, curM) {
+      $('[data-inner]').innerHTML = MER.map((m, k) => chip(m[0], m[1], k < step && step <= 3 && k === step - 1 ? 'cur' : k < Math.min(step, 3) ? 'done' : '')).join('');
+      $('[data-outer]').innerHTML = PAY.map((p, k) => chip(p[0], '→ ' + p[1], k === curP ? 'cur' : (step > 3 && k < step - 3 ? 'done' : ''))).join('');
+      $('[data-buckets]').innerHTML = [0, 1, 2].map(b => '<div class="bucket ' + (b === curB ? 'cur' : '') + '">bucket ' + b + buckets[b].map(m => chip(m[0], m[1], m[0] === curM ? 'match' : '')).join('') + '</div>').join('');
+      $('[data-out]').innerHTML = out.map(r => chip(r[0], r[1], 'out')).join('');
+      $('[data-count]').textContent = count;
+    }
+    const api = {
+      reset() { step = 0; buckets = [[], [], []]; out = []; count = 0; draw(-1, -1);
+        $('[data-msg]').textContent = 'Phase ① Build: put each merchant into its bucket.'; },
+      next() {
+        if (step < 3) {
+          const m = MER[step]; const b = bucketOf(m[0]); buckets[b].push(m); step++;
+          draw(b, -1, m[0]);
+          $('[data-msg]').textContent = '① Build: hash(' + m[0] + ') → bucket ' + b + (step === 3 ? '.  Build done. Next: probe.' : '');
+        } else if (step < 7) {
+          const p = PAY[step - 3]; const b = bucketOf(p[1]); count++; out.push([p[0], cat(p[1])]); step++;
+          draw(b, step - 4, p[1]);
+          $('[data-msg]').textContent = '② Probe: ' + p[0] + ' → hash(' + p[1] + ') → bucket ' + b + ' → ' + cat(p[1]) + (step === 7 ? '.  Done: 3 inserts + 4 lookups.' : '');
+        }
+      }
+    };
+    wire(root, api);
+  })();
+
+  /* ---- Merge Join ---- */
+  (function () {
+    const root = document.getElementById('sim-merge');
+    const $ = s => root.querySelector(s);
+    const SP = PAY.slice().sort((a, b) => a[1].localeCompare(b[1]) || a[0].localeCompare(b[0]));   // T1,T3 M101; T2 M102; T4 M103
+    let a, b, out, count, state;
+    function draw() {
+      $('[data-outer]').innerHTML = SP.map((p, k) => chip('<span class="ptr">' + (k === a ? '▶' : '') + '</span>' + p[0], p[1], k < a ? 'done' : k === a ? state : '')).join('');
+      $('[data-inner]').innerHTML = MER.map((m, k) => chip('<span class="ptr">' + (k === b ? '▶' : '') + '</span>' + m[0], m[1], k < b ? 'done' : k === b ? state : '')).join('');
+      $('[data-out]').innerHTML = out.map(r => chip(r[0], r[1], 'out')).join('');
+      $('[data-count]').textContent = count;
+    }
+    const api = {
+      reset() { a = 0; b = 0; out = []; count = 0; state = 'cur'; draw();
+        $('[data-msg]').textContent = 'Both lists are sorted. ▶ marks the current row on each side.'; },
+      next() {
+        if (a >= SP.length || b >= MER.length) return;
+        const p = SP[a], m = MER[b]; count++;
+        if (p[1] === m[0]) {
+          out.push([p[0], m[1]]); state = 'match'; draw();
+          $('[data-msg]').textContent = p[1] + ' = ' + m[0] + ' ✓ output (' + p[0] + ', ' + m[1] + '), move payment pointer';
+          a++;
+        } else {
+          state = 'miss'; draw();
+          $('[data-msg]').textContent = p[1] + ' > ' + m[0] + ': move merchant pointer forward';
+          b++;
+        }
+        if (a >= SP.length) $('[data-msg]').textContent += '.  Done: each list read once.';
+        setTimeout(() => { state = 'cur'; draw(); }, 450);
+      }
+    };
+    wire(root, api);
+  })();
+})();
+</script>
+</body>
+</html>

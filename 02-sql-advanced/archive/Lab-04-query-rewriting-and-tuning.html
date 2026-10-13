@@ -1,0 +1,428 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Lab 04 — Query Rewriting and Performance Tuning</title><style>
+:root{--ink:#14283d;--muted:#52677f;--line:#dfE6ee;--blue:#2465d0;--teal:#087d80;--bg:#f1f5fa;--white:#fff;--orange:#c4742d}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.48 Inter,Arial,sans-serif}button,select{font:inherit}.deck{max-width:1380px;margin:16px auto;background:white;min-height:calc(100vh - 32px);box-shadow:0 16px 48px #19395a23;border-radius:16px;overflow:hidden;position:relative}.topline{height:8px;background:linear-gradient(90deg,#245dce,#20aaa3,#b2dfd9)}.slide{display:none;padding:42px 68px 106px;min-height:calc(100vh - 145px);animation:in .25s ease}.slide.active{display:block}.slide h1{font-size:clamp(29px,3vw,45px);line-height:1.15;margin:12px 0 24px;letter-spacing:-.03em}.eyebrow{font-size:13px;letter-spacing:.11em;color:var(--blue);font-weight:800}.content{font-size:20px}.lead{font-size:28px;max-width:900px;line-height:1.4}.two,.split{display:grid;grid-template-columns:1fr 1fr;gap:22px}.split{grid-template-columns:1.18fr .82fr}.card,.explain{background:#f6f9fd;border:1px solid var(--line);border-radius:12px;padding:20px}.card h3,.explain h3{font-size:21px;margin:0 0 12px}.card p{margin:0}.flow{display:flex;flex-direction:column;gap:6px;align-items:center;max-width:900px;margin:18px auto}.flowbox{background:#edf4ff;border:1px solid #bcd2f6;border-radius:11px;padding:11px 22px;min-width:65%;text-align:center;font-weight:750;font-size:21px}.flowarrow{font-size:23px;color:#6587bd;line-height:1}.grid3{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.grid3 .card{min-height:103px}.sql{background:#12283c;color:#eef7ff;border-radius:12px;overflow:auto;max-height:60vh}.sql pre{margin:0;padding:22px;font-size:15px;white-space:pre;tab-size:2}.explain{font-size:17px;max-height:60vh;overflow:auto}.explain pre{overflow:auto}.content code:not(pre code){background:#e8eff7;border-radius:4px;padding:1px 4px;font-size:.87em}.content table{width:100%;border-collapse:collapse;font-size:17px}.content th,.content td{border-bottom:1px solid #dae4ee;text-align:left;padding:9px 12px}.content th{background:#eaf1fb}.content li{margin:9px 0}.content p{margin:12px 0}.biglist{font-size:23px}.takeaway{background:#eaf8f6;border-left:5px solid var(--teal);padding:15px 18px;border-radius:8px}.reveal{opacity:0;transform:translateY(12px);transition:opacity .33s ease,transform .33s ease}.reveal.visible{opacity:1;transform:none}.footer{position:absolute;bottom:0;left:0;right:0;display:flex;align-items:center;gap:9px;padding:13px 24px;border-top:1px solid var(--line);background:#fff}.footer button,.footer select{border:1px solid #cedae7;background:#f5f9ff;color:var(--ink);padding:7px 11px;border-radius:7px;cursor:pointer}.footer button:hover{background:#e7f0ff}.footer .spacer{flex:1}.footer .count{font-size:13px;color:var(--muted);min-width:65px}.progress{position:absolute;bottom:0;left:0;height:4px;background:var(--blue);transition:width .24s}.notes{display:none;position:absolute;z-index:10;bottom:68px;right:26px;left:26px;padding:18px 22px;border-radius:10px;background:#eef9f8;box-shadow:0 3px 18px #15293629;font-size:16px}.notes.show{display:block}button:focus-visible{outline:3px solid orange;outline-offset:2px}@keyframes in{from{opacity:.35;transform:translateY(7px)}to{opacity:1;transform:none}}@media(max-width:840px){.slide{padding:25px 25px 95px}.two,.split,.grid3{grid-template-columns:1fr}.content{font-size:16px}.lead{font-size:21px}.footer select{max-width:140px}}@media print{.deck{box-shadow:none;margin:0}.slide{display:block!important;page-break-after:always;min-height:95vh}.reveal{opacity:1!important;transform:none!important}.footer,.notes{display:none!important}}@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style></head><body><div class="deck"><div class="topline"></div><section class="slide" data-title="The Optimization Detective"><div class="eyebrow">LAB 04 · THE STORY</div><h1>The Optimization Detective</h1><div class="content"><p class="lead reveal">The same correct answer can have very different execution costs.</p><div class="flow reveal"><div class="flowbox">Business question</div><div class="flowarrow">↓</div><div class="flowbox">Slow but correct SQL</div><div class="flowarrow">↓</div><div class="flowbox">Rewrite + suitable index</div><div class="flowarrow">↓</div><div class="flowbox">EXPLAIN (ANALYZE, BUFFERS)</div><div class="flowarrow">↓</div><div class="flowbox">Verify same answers</div></div></div></section><section class="slide" data-title="The rule for every experiment"><div class="eyebrow">THE TEACHING LOOP</div><h1>The rule for every experiment</h1><div class="content"><div class="two reveal"><div class="card"><h3>Before</h3><p>Run the unoptimized query. Capture the plan, actual rows, time, and buffer reads.</p></div><div class="card"><h3>After</h3><p>Change one factor. Run the same business query. Recheck plan, performance, and results.</p></div></div><p class="takeaway reveal">Correctness first. Repeat runs. Don’t promise an index scan.</p></div></section><section class="slide" data-title="Map of the lab"><div class="eyebrow">CHAPTER GUIDE</div><h1>Map of the lab</h1><div class="content"><div class="grid3 reveal"><div class="card"><h3>1</h3><p>Baseline &amp; indexes</p></div><div class="card"><h3>2</h3><p>Predicate rewrites</p></div><div class="card"><h3>3</h3><p>Composite indexes</p></div><div class="card"><h3>4</h3><p>EXISTS vs DISTINCT</p></div><div class="card"><h3>5</h3><p>Pre-aggregation &amp; CTEs</p></div><div class="card"><h3>6</h3><p>Top-N &amp; pagination</p></div><div class="card"><h3>7</h3><p>Partial indexes</p></div><div class="card"><h3>8</h3><p>Statistics &amp; validation</p></div></div></div></section><section class="slide" data-title="The question before the SQL"><div class="eyebrow">EXERCISE 01 · THINK</div><h1>The question before the SQL</h1><div class="content"><p class="reveal"><strong>Business story:</strong> A payment platform generates transaction lookups, active-channel dashboards, top-spender lists, merchant reports, and paginated history. We want these requests to become faster without changing the answer.</p>
+</div></section><section class="slide" data-title="1.1 Inspect the source schema"><div class="eyebrow">EXERCISE 01 · RUN SQL</div><h1>1.1 Inspect the source schema</h1><div class="content"><div class="split reveal"><div class="sql"><pre><code>SELECT column_name, data_type
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name = 'lab03_transactions'
+ORDER BY ordinal_position;
+
+SELECT count(*) AS source_rows FROM lab03_transactions;
+SELECT min(txn_ts), max(txn_ts) FROM lab03_transactions;</code></pre></div><div class="explain"><h3>What to look for</h3><p>Compare scan methods, estimates, actual rows, buffers, and execution time.</p></div></div></div></section><section class="slide" data-title="1.2 Copy Lab 03 transactions"><div class="eyebrow">EXERCISE 01 · RUN SQL</div><h1>1.2 Copy Lab 03 transactions</h1><div class="content"><div class="split reveal"><div class="sql"><pre><code>DROP TABLE IF EXISTS lab04_transactions;
+
+CREATE TABLE lab04_transactions AS
+SELECT * FROM lab03_transactions;
+
+ANALYZE lab04_transactions;
+
+SELECT count(*) AS lab04_rows FROM lab04_transactions;</code></pre></div><div class="explain"><h3>What to look for</h3><p><strong>Expected:</strong> Around 300,000 transaction rows with the full Lab 03 dataset. The copied table starts without the Lab 03 indexes, so experiments remain independent.</p>
+</div></div></div></section><section class="slide" data-title="1.3 Inspect real data distributions"><div class="eyebrow">EXERCISE 01 · RUN SQL</div><h1>1.3 Inspect real data distributions</h1><div class="content"><div class="split reveal"><div class="sql"><pre><code>SELECT channel, count(*) AS rows
+FROM lab04_transactions
+GROUP BY channel ORDER BY rows DESC;
+
+SELECT status, count(*) AS rows
+FROM lab04_transactions
+GROUP BY status ORDER BY rows DESC;
+
+SELECT payer_account, count(*) AS rows
+FROM lab04_transactions
+GROUP BY payer_account ORDER BY rows DESC LIMIT 5;</code></pre></div><div class="explain"><h3>What to look for</h3><p><strong>Observe:</strong> Which values are common and rare? A condition matching 0.01% of a table is very different from one matching 40%.</p>
+<p><strong>Checkpoint:</strong> Write down the row count, one <code>payer_account</code> with transactions, and two channel/status values you observed.</p>
+<hr/>
+</div></div></div></section><section class="slide" data-title="Find the 30 rows"><div class="eyebrow">EXERCISE 02 · BUILD A RELIABLE BASELINE</div><h1>Find the 30 rows</h1><div class="content"><p class="lead reveal">For selective payer lookups, avoid examining every transaction.</p><div class="flow reveal"><div class="flowbox">300,000 transaction rows</div><div class="flowarrow">↓</div><div class="flowbox">Filter payer account</div><div class="flowarrow">↓</div><div class="flowbox">~30 matching rows</div></div></div></section><section class="slide" data-title="2.1 Choose a real payer value"><div class="eyebrow">EXERCISE 02 · RUN SQL</div><h1>2.1 Choose a real payer value</h1><div class="content"><div class="split reveal"><div class="sql"><pre><code>SELECT payer_account, count(*) AS txn_count
+FROM lab04_transactions
+GROUP BY payer_account
+ORDER BY txn_count DESC, payer_account
+LIMIT 5;</code></pre></div><div class="explain"><h3>What to look for</h3><p>For examples below, substitute one of these values for <code>'YOUR_PAYER'</code>.</p>
+</div></div></div></section><section class="slide" data-title="2.2 Baseline scan"><div class="eyebrow">EXERCISE 02 · RUN SQL</div><h1>2.2 Baseline scan</h1><div class="content"><div class="split reveal"><div class="sql"><pre><code>EXPLAIN (ANALYZE, BUFFERS)
+SELECT txn_id, payer_account, amount, txn_ts
+FROM lab04_transactions
+WHERE payer_account = 'YOUR_PAYER';</code></pre></div><div class="explain"><h3>What to look for</h3><p>Record:</p>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Before tuning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Access method (<code>Seq Scan</code>, <code>Parallel Seq Scan</code>, etc.)</td>
+<td></td>
+</tr>
+<tr>
+<td>Estimated rows</td>
+<td></td>
+</tr>
+<tr>
+<td>Actual rows</td>
+<td></td>
+</tr>
+<tr>
+<td>Shared hit / read buffers</td>
+<td></td>
+</tr>
+<tr>
+<td>Planning time</td>
+<td></td>
+</tr>
+<tr>
+<td>Execution time</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+</div></div></div></section><section class="slide" data-title="2.3 Index and re-measure"><div class="eyebrow">EXERCISE 02 · RUN SQL</div><h1>2.3 Index and re-measure</h1><div class="content"><div class="split reveal"><div class="sql"><pre><code>CREATE INDEX idx_lab04_payer
+ON lab04_transactions (payer_account);
+
+ANALYZE lab04_transactions;
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT txn_id, payer_account, amount, txn_ts
+FROM lab04_transactions
+WHERE payer_account = 'YOUR_PAYER';</code></pre></div><div class="explain"><h3>What to look for</h3><p><strong>Expected observation:</strong> A selective payer lookup often switches to <code>Index Scan</code>, <code>Bitmap Index Scan</code> + <code>Bitmap Heap Scan</code>, or another index-based plan. It is <strong>not guaranteed</strong>.</p>
+<p><strong>Trainer explanation:</strong> <code>cost</code> is a planner estimate, not milliseconds. <code>Buffers: shared hit</code> counts cached page accesses; <code>read</code> counts shared-buffer misses that required a page read, which might be fulfilled from the operating-system cache.</p>
+<hr/>
+</div></div></div></section><section class="slide" data-title="When would I use this?"><div class="eyebrow">EXERCISE 02 · DECISION</div><h1>When would I use this?</h1><div class="content"><div class="two reveal"><div class="card"><h3>Use it when</h3><p>You filter on a small fraction of rows; measure index cost.</p></div><div class="card"><h3>Measure / caution</h3><p>Index maintenance and heap fetches have a cost.</p></div></div></div></section><section class="slide" data-title="Don’t wrap the indexed column"><div class="eyebrow">EXERCISE 03 · AVOID NON-INDEX-FRIENDLY PREDICATES</div><h1>Don’t wrap the indexed column</h1><div class="content"><p class="lead reveal">An expression like txn_ts::date may prevent a raw timestamp B-tree index condition.</p><div class="flow reveal"><div class="flowbox">txn_ts::date = date</div><div class="flowarrow">↓</div><div class="flowbox">Rewrite as half-open timestamp range</div><div class="flowarrow">↓</div><div class="flowbox">Eligible B-tree range scan</div></div></div></section><section class="slide" data-title="The question before the SQL"><div class="eyebrow">EXERCISE 03 · THINK</div><h1>The question before the SQL</h1><div class="content"><p class="reveal"><strong>Question:</strong> Why can a function on a filtered column cause a table scan?</p>
+</div></section><section class="slide" data-title="3.1 Create an index on transaction timestamp"><div class="eyebrow">EXERCISE 03 · RUN SQL</div><h1>3.1 Create an index on transaction timestamp</h1><div class="content"><div class="split reveal"><div class="sql"><pre><code>CREATE INDEX idx_lab04_ts ON lab04_transactions(txn_ts);
+ANALYZE lab04_transactions;</code></pre></div><div class="explain"><h3>What to look for</h3><p>Compare scan methods, estimates, actual rows, buffers, and execution time.</p></div></div></div></section><section class="slide" data-title="3.2 Less index-friendly: cast the column"><div class="eyebrow">EXERCISE 03 · RUN SQL</div><h1>3.2 Less index-friendly: cast the column</h1><div class="content"><div class="split reveal"><div class="sql"><pre><code>EXPLAIN (ANALYZE, BUFFERS)
+SELECT count(*)
+FROM lab04_transactions
+WHERE txn_ts::date = DATE '2026-03-15';</code></pre></div><div class="explain"><h3>What to look for</h3><p>Compare scan methods, estimates, actual rows, buffers, and execution time.</p></div></div></div></section><section class="slide" data-title="3.3 Range predicate: index-friendly form"><div class="eyebrow">EXERCISE 03 · RUN SQL</div><h1>3.3 Range predicate: index-friendly form</h1><div class="content"><div class="split reveal"><div class="sql"><pre><code>EXPLAIN (ANALYZE, BUFFERS)
+SELECT count(*)
+FROM lab04_transactions
+WHERE txn_ts &gt;= TIMESTAMP '2026-03-15 00:00:00'
+  AND txn_ts &lt;  TIMESTAMP '2026-03-16 00:00:00';</code></pre></div><div class="explain"><h3>What to look for</h3><p><strong>Why a half-open range?</strong> For a plain <code>timestamp without time zone</code>, both forms select the same calendar date. The range form makes the index key directly searchable. If the column is <code>timestamptz</code>, choose explicit timezone boundaries first; the semantics of <code>::date</code> depend on session timezone.</p>
+<table>
+<thead>
+<tr>
+<th>Pattern</th>
+<th>Typical planner consequence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>txn_ts::date = DATE '...'</code></td>
+<td>Index on raw <code>txn_ts</code> may not be useful for the predicate</td>
+</tr>
+<tr>
+<td><code>txn_ts &gt;= ... AND txn_ts &lt; ...</code></td>
+<td>Ordinary B-tree range scan becomes available</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Important:</strong> Verify the date is present in your dataset. If it is absent, choose a day returned by <code>SELECT txn_ts::date, count(*) ... GROUP BY 1 ORDER BY 1 LIMIT 10;</code>.</p>
+<hr/>
+</div></div></div></section><section class="slide" data-title="When would I use this?"><div class="eyebrow">EXERCISE 03 · DECISION</div><h1>When would I use this?</h1><div class="content"><div class="two reveal"><div class="card"><h3>Use it when</h3><p>You filter by a date range on an indexed timestamp.</p></div><div class="card"><h3>Measure / caution</h3><p>For timestamptz, preserve intended timezone semantics.</p></div></div></div></section><section class="slide" data-title="Filter first, then order"><div class="eyebrow">EXERCISE 04 · COMPOSITE INDEXES AND `ORDER BY ... LIMIT`</div><h1>Filter first, then order</h1><div class="content"><p class="lead reveal">The right composite index can make top-10 history a short ordered walk.</p><div class="flow reveal"><div class="flowbox">WHERE payer_account = ?</div><div class="flowarrow">↓</div><div class="flowbox">ORDER BY txn_ts DESC, txn_id DESC</div><div class="flowarrow">↓</div><div class="flowbox">LIMIT 10</div></div></div></section><section class="slide" data-title="The question before the SQL"><div class="eyebrow">EXERCISE 04 · THINK</div><h1>The question before the SQL</h1><div class="content"><p class="reveal"><strong>Business question:</strong> Show the latest 10 transactions of a payer.</p>
+</div></section><section class="slide" data-title="4.1 Query with payer-only index"><div class="eyebrow">EXERCISE 04 · RUN SQL</div><h1>4.1 Query with payer-only index</h1><div class="content"><div class="split reveal"><div class="sql"><pre><code>EXPLAIN (ANALYZE, BUFFERS)
+SELECT txn_id, payer_account, txn_ts, amount
+FROM lab04_transactions
+WHERE payer_account = 'YOUR_PAYER'
+ORDER BY txn_ts DESC, txn_id DESC
+LIMIT 10;</code></pre></div><div class="explain"><h3>What to look for</h3><p>Check for <code>Sort</code> or <code>top-N heapsort</code> nodes. Sorting 30 rows is often already cheap.</p>
+</div></div></div></section><section class="slide" data-title="4.2 Composite index matching filter and ordering"><div class="eyebrow">EXERCISE 04 · RUN SQL</div><h1>4.2 Composite index matching filter and ordering</h1><div class="content"><div class="split reveal"><div class="sql"><pre><code>CREATE INDEX idx_lab04_payer_ts_id
+ON lab04_transactions (payer_account, txn_ts DESC, txn_id DESC);
+
+ANALYZE lab04_transactions;
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT txn_id, payer_account, txn_ts, amount
+FROM lab04_transactions
+WHERE payer_account = 'YOUR_PAYER'
+ORDER BY txn_ts DESC, txn_id DESC
+LIMIT 10;</code></pre></div><div class="explain"><h3>What to look for</h3><p><strong>Plan story:</strong> Use the equality column first; follow with the columns needed for the ordered output. PostgreSQL may retrieve the first 10 qualifying index entries without sorting the whole payer history.</p>
+<p><strong>Discuss:</strong> Why is <code>(txn_ts, payer_account)</code> usually less suitable for this particular query than <code>(payer_account, txn_ts)</code>?</p>
+<hr/>
+</div></div></div></section><section class="slide" data-title="When would I use this?"><div class="eyebrow">EXERCISE 04 · DECISION</div><h1>When would I use this?</h1><div class="content"><div class="two reveal"><div class="card"><h3>Use it when</h3><p>Equality filter + descending time order + small LIMIT.</p></div><div class="card"><h3>Measure / caution</h3><p>A very small result might not need a new index.</p></div></div></div></section><section class="slide" data-title="Do you need rows or just existence?"><div class="eyebrow">EXERCISE 05 · `EXISTS` INSTEAD OF JOIN-INDUCED DUPLICATES</div><h1>Do you need rows or just existence?</h1><div class="content"><p class="lead reveal">JOIN can multiply merchant rows; EXISTS expresses the yes/no question.</p><div class="flow reveal"><div class="flowbox">Merchant M101</div><div class="flowarrow">↓</div><div class="flowbox">300 matching transactions</div><div class="flowarrow">↓</div><div class="flowbox">EXISTS returns M101 once</div></div></div></section><section class="slide" data-title="The question before the SQL"><div class="eyebrow">EXERCISE 05 · THINK</div><h1>The question before the SQL</h1><div class="content"><p class="reveal"><strong>Business question:</strong> List merchants having at least one matching transaction. We need each merchant <strong>once</strong>.</p>
+</div></section><section class="slide" data-title="5.1 A join that can multiply merchant rows"><div class="eyebrow">EXERCISE 05 · RUN SQL</div><h1>5.1 A join that can multiply merchant rows</h1><div class="content"><div class="split reveal"><div class="sql"><pre><code>EXPLAIN (ANALYZE, BUFFERS)
+SELECT DISTINCT m.merchant_account, m.category
+FROM lab03_merchants m
+JOIN lab04_transactions t
+  ON t.payee_account = m.merchant_account;</code></pre></div><div class="explain"><h3>What to look for</h3><p>Compare scan methods, estimates, actual rows, buffers, and execution time.</p></div></div></div></section><section class="slide" data-title="5.2 An existence test"><div class="eyebrow">EXERCISE 05 · RUN SQL</div><h1>5.2 An existence test</h1><div class="content"><div class="split reveal"><div class="sql"><pre><code>EXPLAIN (ANALYZE, BUFFERS)
+SELECT m.merchant_account, m.category
+FROM lab03_merchants m
+WHERE EXISTS (
+    SELECT 1
+    FROM lab04_transactions t
+    WHERE t.payee_account = m.merchant_account
+);</code></pre></div><div class="explain"><h3>What to look for</h3><p><strong>Expected observation:</strong> <code>EXISTS</code> expresses a semijoin: return each merchant if at least one matching transaction exists. PostgreSQL may use <code>Hash Semi Join</code>, <code>Nested Loop Semi Join</code>, or rewrite the query differently.</p>
+<p><strong>Check correctness (set comparison):</strong></p>
+<p><strong>Expected:</strong> <code>0, 0</code> if both are equivalent. <code>EXISTS</code> is <strong>not</strong> a drop-in replacement if the result needs counts, sums, or individual joined transaction rows.</p>
+<hr/>
+</div></div></div></section><section class="slide" data-title="5.2 An existence test · verify"><div class="eyebrow">EXERCISE 05 · RUN SQL</div><h1>5.2 An existence test · verify</h1><div class="content"><div class="split reveal"><div class="sql"><pre><code>WITH a AS (
+  SELECT DISTINCT m.merchant_account, m.category
+  FROM lab03_merchants m
+  JOIN lab04_transactions t
+    ON t.payee_account = m.merchant_account
+),
+b AS (
+  SELECT m.merchant_account, m.category
+  FROM lab03_merchants m
+  WHERE EXISTS (
+    SELECT 1 FROM lab04_transactions t
+    WHERE t.payee_account = m.merchant_account
+  )
+)
+SELECT
+  (SELECT count(*) FROM (SELECT * FROM a EXCEPT SELECT * FROM b) x) AS only_a,
+  (SELECT count(*) FROM (SELECT * FROM b EXCEPT SELECT * FROM a) x) AS only_b;</code></pre></div><div class="explain"><h3>What to look for</h3><p><strong>Expected observation:</strong> <code>EXISTS</code> expresses a semijoin: return each merchant if at least one matching transaction exists. PostgreSQL may use <code>Hash Semi Join</code>, <code>Nested Loop Semi Join</code>, or rewrite the query differently.</p>
+<p><strong>Check correctness (set comparison):</strong></p>
+<p><strong>Expected:</strong> <code>0, 0</code> if both are equivalent. <code>EXISTS</code> is <strong>not</strong> a drop-in replacement if the result needs counts, sums, or individual joined transaction rows.</p>
+<hr/>
+</div></div></div></section><section class="slide" data-title="When would I use this?"><div class="eyebrow">EXERCISE 05 · DECISION</div><h1>When would I use this?</h1><div class="content"><div class="two reveal"><div class="card"><h3>Use it when</h3><p>You need presence/absence rather than transaction-level rows.</p></div><div class="card"><h3>Measure / caution</h3><p>EXISTS does not replace joins when you need sums or detail rows.</p></div></div></div></section><section class="slide" data-title="Avoid doing the same count repeatedly"><div class="eyebrow">EXERCISE 06 · CORRELATED SUBQUERY VS. PRE-AGGREGATED JOIN</div><h1>Avoid doing the same count repeatedly</h1><div class="content"><p class="lead reveal">Aggregate transactions once, then join summarized results.</p><div class="flow reveal"><div class="flowbox">Repeated count per merchant</div><div class="flowarrow">↓</div><div class="flowbox">GROUP BY payee_account once</div><div class="flowarrow">↓</div><div class="flowbox">LEFT JOIN merchant totals</div></div></div></section><section class="slide" data-title="The question before the SQL"><div class="eyebrow">EXERCISE 06 · THINK</div><h1>The question before the SQL</h1><div class="content"><p class="reveal"><strong>Business question:</strong> For each merchant, report the number of transactions it received.</p>
+</div></section><section class="slide" data-title="6.1 Correlated subquery"><div class="eyebrow">EXERCISE 06 · RUN SQL</div><h1>6.1 Correlated subquery</h1><div class="content"><div class="split reveal"><div class="sql"><pre><code>EXPLAIN (ANALYZE, BUFFERS)
+SELECT m.merchant_account, m.category,
+       (SELECT count(*)
+        FROM lab04_transactions t
+        WHERE t.payee_account = m.merchant_account) AS txn_count
+FROM lab03_merchants m
+LIMIT 50;</code></pre></div><div class="explain"><h3>What to look for</h3><p>Look for a subplan and its <code>loops</code> count. Here <code>LIMIT 50</code> avoids running thousands of repeated full-table scans on an unindexed copy.</p>
+</div></div></div></section><section class="slide" data-title="6.2 Group once, then join"><div class="eyebrow">EXERCISE 06 · RUN SQL</div><h1>6.2 Group once, then join</h1><div class="content"><div class="split reveal"><div class="sql"><pre><code>EXPLAIN (ANALYZE, BUFFERS)
+WITH counts AS (
+    SELECT payee_account, count(*) AS txn_count
+    FROM lab04_transactions
+    GROUP BY payee_account
+)
+SELECT m.merchant_account, m.category,
+       COALESCE(c.txn_count, 0) AS txn_count
+FROM lab03_merchants m
+LEFT JOIN counts c
+  ON c.payee_account = m.merchant_account
+LIMIT 50;</code></pre></div><div class="explain"><h3>What to look for</h3><p><strong>Important comparison caveat:</strong> The two queries can produce equivalent per-merchant counts, but a <code>LIMIT</code> without <code>ORDER BY</code> does <strong>not</strong> guarantee the same 50 merchants. Compare results using an <code>ORDER BY m.merchant_account</code> on both queries, or compare all rows after adding an efficient index on <code>lab04_transactions(payee_account)</code>.</p>
+</div></div></div></section><section class="slide" data-title="6.3 Optional: make the correlated lookup efficient"><div class="eyebrow">EXERCISE 06 · RUN SQL</div><h1>6.3 Optional: make the correlated lookup efficient</h1><div class="content"><div class="split reveal"><div class="sql"><pre><code>CREATE INDEX idx_lab04_payee
+ON lab04_transactions (payee_account);
+
+ANALYZE lab04_transactions;</code></pre></div><div class="explain"><h3>What to look for</h3><p>Rerun the subquery. An indexed repeated lookup can be efficient, so <strong>grouped joins are not automatically faster</strong>.</p>
+<hr/>
+</div></div></div></section><section class="slide" data-title="When would I use this?"><div class="eyebrow">EXERCISE 06 · DECISION</div><h1>When would I use this?</h1><div class="content"><div class="two reveal"><div class="card"><h3>Use it when</h3><p>You need a count for many merchants; avoid repeated scans.</p></div><div class="card"><h3>Measure / caution</h3><p>Index-assisted correlated lookups may already be effective.</p></div></div></div></section><section class="slide" data-title="CTEs: inline or materialize?"><div class="eyebrow">EXERCISE 07 · CTE INLINING AND MATERIALIZATION</div><h1>CTEs: inline or materialize?</h1><div class="content"><p class="lead reveal">Materialization can block pushdown, but is useful for reused expensive work.</p><div class="flow reveal"><div class="flowbox">WITH expression</div><div class="flowarrow">↓</div><div class="flowbox">Inline or materialize</div><div class="flowarrow">↓</div><div class="flowbox">Check plans and reuse</div></div></div></section><section class="slide" data-title="The question before the SQL"><div class="eyebrow">EXERCISE 07 · THINK</div><h1>The question before the SQL</h1><div class="content"><p class="reveal">A Common Table Expression (<code>WITH</code>) improves readability, but may influence the plan.</p>
+</div></section><section class="slide" data-title="7.1 Default CTE"><div class="eyebrow">EXERCISE 07 · RUN SQL</div><h1>7.1 Default CTE</h1><div class="content"><div class="split reveal"><div class="sql"><pre><code>EXPLAIN (ANALYZE, BUFFERS)
+WITH payer_txns AS (
+  SELECT * FROM lab04_transactions
+  WHERE payer_account = 'YOUR_PAYER'
+)
+SELECT count(*) FROM payer_txns;</code></pre></div><div class="explain"><h3>What to look for</h3><p>In modern PostgreSQL, a simple, side-effect-free CTE referenced once can usually be inlined into its parent query.</p>
+</div></div></div></section><section class="slide" data-title="7.2 Force materialization"><div class="eyebrow">EXERCISE 07 · RUN SQL</div><h1>7.2 Force materialization</h1><div class="content"><div class="split reveal"><div class="sql"><pre><code>EXPLAIN (ANALYZE, BUFFERS)
+WITH payer_txns AS MATERIALIZED (
+  SELECT * FROM lab04_transactions
+  WHERE payer_account = 'YOUR_PAYER'
+)
+SELECT count(*) FROM payer_txns;</code></pre></div><div class="explain"><h3>What to look for</h3><p>Compare scan methods, estimates, actual rows, buffers, and execution time.</p></div></div></div></section><section class="slide" data-title="7.3 Request inlining"><div class="eyebrow">EXERCISE 07 · RUN SQL</div><h1>7.3 Request inlining</h1><div class="content"><div class="split reveal"><div class="sql"><pre><code>EXPLAIN (ANALYZE, BUFFERS)
+WITH payer_txns AS NOT MATERIALIZED (
+  SELECT * FROM lab04_transactions
+  WHERE payer_account = 'YOUR_PAYER'
+)
+SELECT count(*) FROM payer_txns;</code></pre></div><div class="explain"><h3>What to look for</h3><table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Default</td>
+<td>Planner may inline eligible single-use CTEs</td>
+</tr>
+<tr>
+<td><code>MATERIALIZED</code></td>
+<td>Explicit optimization fence; intermediate result produced separately</td>
+</tr>
+<tr>
+<td><code>NOT MATERIALIZED</code></td>
+<td>Permit merging with parent query when legal; repeated work may result for multiple references</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Inspect:</strong> Do you see <code>CTE Scan</code>? Are predicates pushed into the base scan? Do not treat either hint as a universal performance fix.</p>
+<hr/>
+</div></div></div></section><section class="slide" data-title="When would I use this?"><div class="eyebrow">EXERCISE 07 · DECISION</div><h1>When would I use this?</h1><div class="content"><div class="two reveal"><div class="card"><h3>Use it when</h3><p>You need to trade off shared computation and filter pushdown.</p></div><div class="card"><h3>Measure / caution</h3><p>MATERIALIZED can intentionally prevent optimization across the CTE boundary.</p></div></div></div></section><section class="slide" data-title="Latest row per group"><div class="eyebrow">EXERCISE 08 · WINDOW FUNCTIONS: LATEST TRANSACTION PER PAYER</div><h1>Latest row per group</h1><div class="content"><p class="lead reveal">ROW_NUMBER() works broadly; DISTINCT ON is a PostgreSQL-specific alternative.</p><div class="flow reveal"><div class="flowbox">Transactions per payer</div><div class="flowarrow">↓</div><div class="flowbox">Order newest to oldest</div><div class="flowarrow">↓</div><div class="flowbox">Select first row per payer</div></div></div></section><section class="slide" data-title="The question before the SQL"><div class="eyebrow">EXERCISE 08 · THINK</div><h1>The question before the SQL</h1><div class="content"><p class="reveal"><strong>Business question:</strong> Find the latest transaction for each payer.</p>
+</div></section><section class="slide" data-title="8.1 Window-function approach"><div class="eyebrow">EXERCISE 08 · RUN SQL</div><h1>8.1 Window-function approach</h1><div class="content"><div class="split reveal"><div class="sql"><pre><code>EXPLAIN (ANALYZE, BUFFERS)
+SELECT payer_account, txn_id, txn_ts, amount
+FROM (
+  SELECT t.*,
+         row_number() OVER (
+             PARTITION BY payer_account
+             ORDER BY txn_ts DESC, txn_id DESC
+         ) AS rn
+  FROM lab04_transactions t
+) ranked
+WHERE rn = 1;</code></pre></div><div class="explain"><h3>What to look for</h3><p><strong>Plan reading:</strong> Look for <code>WindowAgg</code>, <code>Sort</code>, <code>Incremental Sort</code>, or a useful ordered index scan. With an index matching <code>(payer_account, txn_ts DESC, txn_id DESC)</code>, sort work may decrease.</p>
+</div></div></div></section><section class="slide" data-title="8.2 PostgreSQL-specific `DISTINCT ON`"><div class="eyebrow">EXERCISE 08 · RUN SQL</div><h1>8.2 PostgreSQL-specific `DISTINCT ON`</h1><div class="content"><div class="split reveal"><div class="sql"><pre><code>EXPLAIN (ANALYZE, BUFFERS)
+SELECT DISTINCT ON (payer_account)
+       payer_account, txn_id, txn_ts, amount
+FROM lab04_transactions
+ORDER BY payer_account, txn_ts DESC, txn_id DESC;</code></pre></div><div class="explain"><h3>What to look for</h3><p><strong>Check correctness:</strong> Both select the same row per payer when <code>(txn_ts, txn_id)</code> consistently determines a unique winner. If there can be ties on both, add another unique tie-breaker to both queries.</p>
+<p><strong>Trade-off:</strong> <code>DISTINCT ON</code> can be concise and efficient in PostgreSQL. <code>row_number()</code> is more portable and supports top 2, top 3, etc.</p>
+<hr/>
+</div></div></div></section><section class="slide" data-title="When would I use this?"><div class="eyebrow">EXERCISE 08 · DECISION</div><h1>When would I use this?</h1><div class="content"><div class="two reveal"><div class="card"><h3>Use it when</h3><p>You need one newest transaction per account.</p></div><div class="card"><h3>Measure / caution</h3><p>Watch sorting cost and tie-breaking for deterministic results.</p></div></div></div></section><section class="slide" data-title="Why OFFSET gets slower"><div class="eyebrow">EXERCISE 09 · PAGINATION: OFFSET VS. KEYSET</div><h1>Why OFFSET gets slower</h1><div class="content"><p class="lead reveal">Skipping thousands of records may still require scanning through them.</p><div class="flow reveal"><div class="flowbox">OFFSET 10000 LIMIT 20</div><div class="flowarrow">↓</div><div class="flowbox">Seek after last seen key</div><div class="flowarrow">↓</div><div class="flowbox">Read next page</div></div></div></section><section class="slide" data-title="The question before the SQL"><div class="eyebrow">EXERCISE 09 · THINK</div><h1>The question before the SQL</h1><div class="content"><p class="reveal"><strong>Business question:</strong> Show a payer's transactions in a deterministic, newest-first order.</p>
+<blockquote class="reveal">
+<p>We use <code>(txn_ts, txn_id)</code> as the ordering keys. Confirm that <code>txn_id</code> is unique per transaction; otherwise use a genuinely unique final ordering key to make pagination stable.</p>
+</blockquote>
+</div></section><section class="slide" data-title="9.1 OFFSET pagination"><div class="eyebrow">EXERCISE 09 · RUN SQL</div><h1>9.1 OFFSET pagination</h1><div class="content"><div class="split reveal"><div class="sql"><pre><code>EXPLAIN (ANALYZE, BUFFERS)
+SELECT txn_id, txn_ts, amount
+FROM lab04_transactions
+WHERE payer_account = 'YOUR_PAYER'
+ORDER BY txn_ts DESC, txn_id DESC
+LIMIT 10 OFFSET 20;</code></pre></div><div class="explain"><h3>What to look for</h3><p>Compare scan methods, estimates, actual rows, buffers, and execution time.</p></div></div></div></section><section class="slide" data-title="9.2 Keyset pagination"><div class="eyebrow">EXERCISE 09 · RUN SQL</div><h1>9.2 Keyset pagination</h1><div class="content"><div class="split reveal"><div class="sql"><pre><code>SELECT txn_ts, txn_id
+FROM lab04_transactions
+WHERE payer_account = 'YOUR_PAYER'
+ORDER BY txn_ts DESC, txn_id DESC
+LIMIT 1 OFFSET 19;</code></pre></div><div class="explain"><h3>What to look for</h3><p>First fetch the cursor (the last row of the previous page):</p>
+<p>First fetch the cursor (the last row of the previous page):</p>
+<p>Then substitute the returned timestamp and transaction ID below:</p>
+<p><strong>Important:</strong> Do <strong>not</strong> execute with the example timestamp and placeholder; substitute an actual cursor returned by the previous statement. This form assumes <code>txn_ts</code> is a plain timestamp; cast/convert appropriately if <code>timestamptz</code>.</p>
+<table>
+<thead>
+<tr>
+<th>OFFSET</th>
+<th>Keyset</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Easy to jump to arbitrary page numbers</td>
+<td>Efficient continuation from a known cursor</td>
+</tr>
+<tr>
+<td>Large OFFSET may require visiting many skipped rows</td>
+<td>Can seek to the cursor using a suitable index</td>
+</tr>
+<tr>
+<td>Can be unstable under concurrent inserts</td>
+<td>More stable continuation, though updates/deletes still matter</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Checkpoint:</strong> Your sample dataset may have only a few dozen rows per payer. The difference becomes clearer with very large histories; do not claim a speedup if the data does not demonstrate one.</p>
+<hr/>
+</div></div></div></section><section class="slide" data-title="9.2 Keyset pagination · verify"><div class="eyebrow">EXERCISE 09 · RUN SQL</div><h1>9.2 Keyset pagination · verify</h1><div class="content"><div class="split reveal"><div class="sql"><pre><code>EXPLAIN (ANALYZE, BUFFERS)
+SELECT txn_id, txn_ts, amount
+FROM lab04_transactions
+WHERE payer_account = 'YOUR_PAYER'
+  AND (txn_ts, txn_id) &lt;
+      (TIMESTAMP '2026-03-15 12:00:00', 'REPLACE_TXN_ID')
+ORDER BY txn_ts DESC, txn_id DESC
+LIMIT 10;</code></pre></div><div class="explain"><h3>What to look for</h3><p>First fetch the cursor (the last row of the previous page):</p>
+<p>First fetch the cursor (the last row of the previous page):</p>
+<p>Then substitute the returned timestamp and transaction ID below:</p>
+<p><strong>Important:</strong> Do <strong>not</strong> execute with the example timestamp and placeholder; substitute an actual cursor returned by the previous statement. This form assumes <code>txn_ts</code> is a plain timestamp; cast/convert appropriately if <code>timestamptz</code>.</p>
+<table>
+<thead>
+<tr>
+<th>OFFSET</th>
+<th>Keyset</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Easy to jump to arbitrary page numbers</td>
+<td>Efficient continuation from a known cursor</td>
+</tr>
+<tr>
+<td>Large OFFSET may require visiting many skipped rows</td>
+<td>Can seek to the cursor using a suitable index</td>
+</tr>
+<tr>
+<td>Can be unstable under concurrent inserts</td>
+<td>More stable continuation, though updates/deletes still matter</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Checkpoint:</strong> Your sample dataset may have only a few dozen rows per payer. The difference becomes clearer with very large histories; do not claim a speedup if the data does not demonstrate one.</p>
+<hr/>
+</div></div></div></section><section class="slide" data-title="When would I use this?"><div class="eyebrow">EXERCISE 09 · DECISION</div><h1>When would I use this?</h1><div class="content"><div class="two reveal"><div class="card"><h3>Use it when</h3><p>You implement deep, stable next-page navigation.</p></div><div class="card"><h3>Measure / caution</h3><p>Keyset pagination requires stable ordering and cursor keys.</p></div></div></div></section><section class="slide" data-title="Smaller targeted index"><div class="eyebrow">EXERCISE 10 · PARTIAL INDEX FOR A TARGETED REPORT</div><h1>Smaller targeted index</h1><div class="content"><p class="lead reveal">A partial index includes only rows meeting a stable query predicate.</p><div class="flow reveal"><div class="flowbox">All transactions</div><div class="flowarrow">↓</div><div class="flowbox">Index WHERE status = value</div><div class="flowarrow">↓</div><div class="flowbox">Smaller relevant index</div></div></div></section><section class="slide" data-title="The question before the SQL"><div class="eyebrow">EXERCISE 10 · THINK</div><h1>The question before the SQL</h1><div class="content"><p class="reveal"><strong>Business question:</strong> Only report failed transactions.</p>
+</div></section><section class="slide" data-title="10.1 Discover status values"><div class="eyebrow">EXERCISE 10 · RUN SQL</div><h1>10.1 Discover status values</h1><div class="content"><div class="split reveal"><div class="sql"><pre><code>SELECT status, count(*) FROM lab04_transactions
+GROUP BY status ORDER BY count(*) DESC;</code></pre></div><div class="explain"><h3>What to look for</h3><p>If <code>FAILED</code> is absent, choose an existing status and replace it consistently.</p>
+</div></div></div></section><section class="slide" data-title="10.2 Test query before index"><div class="eyebrow">EXERCISE 10 · RUN SQL</div><h1>10.2 Test query before index</h1><div class="content"><div class="split reveal"><div class="sql"><pre><code>EXPLAIN (ANALYZE, BUFFERS)
+SELECT payer_account, txn_ts, amount
+FROM lab04_transactions
+WHERE status = 'FAILED'
+  AND payer_account = 'YOUR_PAYER'
+ORDER BY txn_ts DESC
+LIMIT 10;</code></pre></div><div class="explain"><h3>What to look for</h3><p>Compare scan methods, estimates, actual rows, buffers, and execution time.</p></div></div></div></section><section class="slide" data-title="10.3 Add a targeted partial index"><div class="eyebrow">EXERCISE 10 · RUN SQL</div><h1>10.3 Add a targeted partial index</h1><div class="content"><div class="split reveal"><div class="sql"><pre><code>CREATE INDEX idx_lab04_failed_payer_ts
+ON lab04_transactions (payer_account, txn_ts DESC)
+WHERE status = 'FAILED';
+
+ANALYZE lab04_transactions;</code></pre></div><div class="explain"><h3>What to look for</h3><p>Rerun the query. The partial index is usable only where the planner can establish that the query predicate implies <code>status = 'FAILED'</code>. A partial index may be smaller and cheaper than a full-table alternative, but adds write overhead and requires a matching workload.</p>
+<hr/>
+</div></div></div></section><section class="slide" data-title="When would I use this?"><div class="eyebrow">EXERCISE 10 · DECISION</div><h1>When would I use this?</h1><div class="content"><div class="two reveal"><div class="card"><h3>Use it when</h3><p>Queries repeatedly focus on a narrow stable subset.</p></div><div class="card"><h3>Measure / caution</h3><p>Predicates must imply the partial index condition.</p></div></div></div></section><section class="slide" data-title="When estimates are wrong"><div class="eyebrow">EXERCISE 11 · STATISTICS AND WRONG ESTIMATES</div><h1>When estimates are wrong</h1><div class="content"><p class="lead reveal">Statistics help the optimizer estimate selectivity and plan shape.</p><div class="flow reveal"><div class="flowbox">Observed data distribution</div><div class="flowarrow">↓</div><div class="flowbox">ANALYZE / extended stats</div><div class="flowarrow">↓</div><div class="flowbox">New estimates</div></div></div></section><section class="slide" data-title="11.1 Inspect optimizer statistics"><div class="eyebrow">EXERCISE 11 · RUN SQL</div><h1>11.1 Inspect optimizer statistics</h1><div class="content"><div class="split reveal"><div class="sql"><pre><code>SELECT attname, null_frac, n_distinct, most_common_vals
+FROM pg_stats
+WHERE schemaname = 'public'
+  AND tablename = 'lab04_transactions'
+  AND attname IN ('payer_account', 'status', 'channel');</code></pre></div><div class="explain"><h3>What to look for</h3><p>Compare scan methods, estimates, actual rows, buffers, and execution time.</p></div></div></div></section><section class="slide" data-title="11.2 Refresh statistics"><div class="eyebrow">EXERCISE 11 · RUN SQL</div><h1>11.2 Refresh statistics</h1><div class="content"><div class="split reveal"><div class="sql"><pre><code>ANALYZE lab04_transactions;
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT count(*)
+FROM lab04_transactions
+WHERE status = 'FAILED' AND channel = 'WEB';</code></pre></div><div class="explain"><h3>What to look for</h3><p>Compare scan methods, estimates, actual rows, buffers, and execution time.</p></div></div></div></section><section class="slide" data-title="11.3 Optional extended statistics for correlated filters"><div class="eyebrow">EXERCISE 11 · RUN SQL</div><h1>11.3 Optional extended statistics for correlated filters</h1><div class="content"><div class="split reveal"><div class="sql"><pre><code>CREATE STATISTICS lab04_status_channel_stats
+    (dependencies, mcv)
+ON status, channel
+FROM lab04_transactions;
+
+ANALYZE lab04_transactions;
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT count(*)
+FROM lab04_transactions
+WHERE status = 'FAILED' AND channel = 'WEB';</code></pre></div><div class="explain"><h3>What to look for</h3><p><strong>Observe:</strong> Are estimated rows closer to actual rows? If the synthetic columns are independent, extended stats may make little difference. Not every estimate is wrong, and statistics are not an index.</p>
+<hr/>
+</div></div></div></section><section class="slide" data-title="When would I use this?"><div class="eyebrow">EXERCISE 11 · DECISION</div><h1>When would I use this?</h1><div class="content"><div class="two reveal"><div class="card"><h3>Use it when</h3><p>Estimated row counts diverge substantially from actual rows.</p></div><div class="card"><h3>Measure / caution</h3><p>Statistics change estimates; they do not repair bad SQL semantics.</p></div></div></div></section><section class="slide" data-title="Prove a rewrite is better"><div class="eyebrow">EXERCISE 12 · CONTROLLED BENCHMARKING AND RESULT VERIFICATION</div><h1>Prove a rewrite is better</h1><div class="content"><p class="lead reveal">Compare equivalent results and repeat execution measurements.</p><div class="flow reveal"><div class="flowbox">Original SQL</div><div class="flowarrow">↓</div><div class="flowbox">Rewritten SQL</div><div class="flowarrow">↓</div><div class="flowbox">Same answer, measured performance</div></div></div></section><section class="slide" data-title="The question before the SQL"><div class="eyebrow">EXERCISE 12 · THINK</div><h1>The question before the SQL</h1><div class="content"><p class="reveal">For each proposed improvement, use the <strong>same query semantics</strong>, same parameters, and similar operating conditions.</p>
+</div></section><section class="slide" data-title="12.1 Record repeat runs"><div class="eyebrow">EXERCISE 12</div><h1>12.1 Record repeat runs</h1><div class="content"><p class="reveal">Run each version several times; record the median rather than relying on one timing.</p>
+<table class="reveal">
+<thead>
+<tr>
+<th>Variant</th>
+<th>Query semantics identical?</th>
+<th>Plan type</th>
+<th style="text-align:right">Median time (ms)</th>
+<th style="text-align:right">Shared hits</th>
+<th style="text-align:right">Shared reads</th>
+<th style="text-align:right">Actual rows</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Baseline</td>
+<td>Yes</td>
+<td></td>
+<td style="text-align:right"></td>
+<td style="text-align:right"></td>
+<td style="text-align:right"></td>
+<td style="text-align:right"></td>
+</tr>
+<tr>
+<td>Rewrite</td>
+<td>Yes</td>
+<td></td>
+<td style="text-align:right"></td>
+<td style="text-align:right"></td>
+<td style="text-align:right"></td>
+<td style="text-align:right"></td>
+</tr>
+<tr>
+<td>Rewrite + index</td>
+<td>Yes</td>
+<td></td>
+<td style="text-align:right"></td>
+<td style="text-align:right"></td>
+<td style="text-align:right"></td>
+<td style="text-align:right"></td>
+</tr>
+</tbody>
+</table>
+</div></section><section class="slide" data-title="12.2 Compare ordered query outputs when needed"><div class="eyebrow">EXERCISE 12 · RUN SQL</div><h1>12.2 Compare ordered query outputs when needed</h1><div class="content"><div class="split reveal"><div class="sql"><pre><code>WITH a AS (
+    SELECT payer_account, count(*) AS txn_count
+    FROM lab04_transactions GROUP BY payer_account
+),
+b AS (
+    SELECT payer_account, count(*) AS txn_count
+    FROM lab04_transactions GROUP BY payer_account
+)
+SELECT
+ (SELECT count(*) FROM (SELECT * FROM a EXCEPT ALL SELECT * FROM b) d) AS only_a,
+ (SELECT count(*) FROM (SELECT * FROM b EXCEPT ALL SELECT * FROM a) d) AS only_b;</code></pre></div><div class="explain"><h3>What to look for</h3><p>For two unordered result sets, <code>EXCEPT</code> and <code>EXCEPT ALL</code> can test content. <code>EXCEPT</code> ignores duplicates; use <code>EXCEPT ALL</code> if row multiplicity matters.</p>
+<p>For two unordered result sets, <code>EXCEPT</code> and <code>EXCEPT ALL</code> can test content. <code>EXCEPT</code> ignores duplicates; use <code>EXCEPT ALL</code> if row multiplicity matters.</p>
+<p>Replace <code>a</code> and <code>b</code> with your actual baseline and rewritten SQL. Both counts should be zero for equivalent results.</p>
+<p><strong>Performance reminder:</strong> Filtering to a subset and dropping output columns can make a query faster, but they change the requested work. That is not proof that an equivalent query was optimized.</p>
+<hr/>
+</div></div></div></section><section class="slide" data-title="When would I use this?"><div class="eyebrow">EXERCISE 12 · DECISION</div><h1>When would I use this?</h1><div class="content"><div class="two reveal"><div class="card"><h3>Use it when</h3><p>A rewrite is deployed and must remain semantically equivalent.</p></div><div class="card"><h3>Measure / caution</h3><p>Never compare a filtered query against an unfiltered query as an equivalent rewrite.</p></div></div></div></section><section class="slide" data-title="Five independent challenges"><div class="eyebrow">PRACTICE</div><h1>Five independent challenges</h1><div class="content"><ol class="biglist reveal"><li>Top 5 transactions per payer</li><li>Merchants with at least one transaction</li><li>Rewrite a timestamp cast into a range</li><li>Design a composite payer + timestamp index</li><li>Verify original and rewritten results match</li></ol></div></section><section class="slide" data-title="Performance scorecard"><div class="eyebrow">MEASURE, DON’T GUESS</div><h1>Performance scorecard</h1><div class="content"><table class="reveal"><tr><th>Measure</th><th>Baseline</th><th>After rewrite</th></tr><tr><td>Plan node</td><td>Record</td><td>Record</td></tr><tr><td>Estimated rows</td><td>Record</td><td>Record</td></tr><tr><td>Actual rows</td><td>Record</td><td>Record</td></tr><tr><td>Shared hits / reads</td><td>Record</td><td>Record</td></tr><tr><td>Execution time</td><td>Record</td><td>Record</td></tr><tr><td>Result verification</td><td>Record</td><td>Record</td></tr></table></div></section><section class="slide" data-title="The final decision tree"><div class="eyebrow">USE THE RIGHT TECHNIQUE</div><h1>The final decision tree</h1><div class="content"><div class="flow reveal"><div class="flowbox">Slow query</div><div class="flowarrow">↓</div><div class="flowbox">Too many rows read? → index/filter</div><div class="flowarrow">↓</div><div class="flowbox">Expensive sorting? → composite index</div><div class="flowarrow">↓</div><div class="flowbox">Repeated lookups? → aggregate once / EXISTS</div><div class="flowarrow">↓</div><div class="flowbox">Deep pagination? → keyset</div><div class="flowarrow">↓</div><div class="flowbox">Bad estimates? → ANALYZE</div><div class="flowarrow">↓</div><div class="flowbox">Validate results and repeat</div></div></div></section><section class="slide" data-title="Lab 04 complete"><div class="eyebrow">THE BIG TAKEAWAY</div><h1>Lab 04 complete</h1><div class="content"><p class="lead reveal">Good tuning is a controlled experiment—not a collection of clever SQL tricks.</p><div class="two reveal"><div class="card"><h3>Prove correctness</h3><p>Equivalent results, duplicates, NULLs, date boundaries, ties.</p></div><div class="card"><h3>Prove efficiency</h3><p>Repeat query runs, compare plans, buffers, and elapsed time.</p></div></div></div></section><div id="notes" class="notes"></div><div class="footer"><button id="prev">← Back</button><button id="next">Next →</button><button id="all">Reveal all</button><button id="notesBtn">Notes (N)</button><button id="fullscreen">Fullscreen (F)</button><span class="spacer"></span><select id="jump" aria-label="Jump to slide"></select><span class="count" id="page"></span></div><div id="bar" class="progress"></div></div><script>const slides=[...document.querySelectorAll('.slide')];const notes=["Tell learners: never tune only by eyeballing SQL. We measure performance AND prove result equivalence.", "Compare like-for-like query semantics, and repeat due to caching and normal variability.", "You can jump to each exercise using the slide selector.", "Ask what result the business actually needs. What rows can be excluded early?", "Execute this SQL on the lab database. Pause to inspect the new execution plan. 1.1 Inspect the source schema.", "Execute this SQL on the lab database. Pause to inspect the new execution plan. 1.2 Copy Lab 03 transactions.", "Execute this SQL on the lab database. Pause to inspect the new execution plan. 1.3 Inspect real data distributions.", "Start with the business question. Do not announce the best index before measuring. For selective payer lookups, avoid examining every transaction.", "Execute this SQL on the lab database. Pause to inspect the new execution plan. 2.1 Choose a real payer value.", "Execute this SQL on the lab database. Pause to inspect the new execution plan. 2.2 Baseline scan.", "Execute this SQL on the lab database. Pause to inspect the new execution plan. 2.3 Index and re-measure.", "Reveal use case, then caution. This is a decision slide, not a universal rule.", "Start with the business question. Do not announce the best index before measuring. An expression like txn_ts::date may prevent a raw timestamp B-tree index condition.", "Ask what result the business actually needs. What rows can be excluded early?", "Execute this SQL on the lab database. Pause to inspect the new execution plan. 3.1 Create an index on transaction timestamp.", "Execute this SQL on the lab database. Pause to inspect the new execution plan. 3.2 Less index-friendly: cast the column.", "Execute this SQL on the lab database. Pause to inspect the new execution plan. 3.3 Range predicate: index-friendly form.", "Reveal use case, then caution. This is a decision slide, not a universal rule.", "Start with the business question. Do not announce the best index before measuring. The right composite index can make top-10 history a short ordered walk.", "Ask what result the business actually needs. What rows can be excluded early?", "Execute this SQL on the lab database. Pause to inspect the new execution plan. 4.1 Query with payer-only index.", "Execute this SQL on the lab database. Pause to inspect the new execution plan. 4.2 Composite index matching filter and ordering.", "Reveal use case, then caution. This is a decision slide, not a universal rule.", "Start with the business question. Do not announce the best index before measuring. JOIN can multiply merchant rows; EXISTS expresses the yes/no question.", "Ask what result the business actually needs. What rows can be excluded early?", "Execute this SQL on the lab database. Pause to inspect the new execution plan. 5.1 A join that can multiply merchant rows.", "Execute this SQL on the lab database. Pause to inspect the new execution plan. 5.2 An existence test.", "Execute this SQL on the lab database. Pause to inspect the new execution plan. 5.2 An existence test.", "Reveal use case, then caution. This is a decision slide, not a universal rule.", "Start with the business question. Do not announce the best index before measuring. Aggregate transactions once, then join summarized results.", "Ask what result the business actually needs. What rows can be excluded early?", "Execute this SQL on the lab database. Pause to inspect the new execution plan. 6.1 Correlated subquery.", "Execute this SQL on the lab database. Pause to inspect the new execution plan. 6.2 Group once, then join.", "Execute this SQL on the lab database. Pause to inspect the new execution plan. 6.3 Optional: make the correlated lookup efficient.", "Reveal use case, then caution. This is a decision slide, not a universal rule.", "Start with the business question. Do not announce the best index before measuring. Materialization can block pushdown, but is useful for reused expensive work.", "Ask what result the business actually needs. What rows can be excluded early?", "Execute this SQL on the lab database. Pause to inspect the new execution plan. 7.1 Default CTE.", "Execute this SQL on the lab database. Pause to inspect the new execution plan. 7.2 Force materialization.", "Execute this SQL on the lab database. Pause to inspect the new execution plan. 7.3 Request inlining.", "Reveal use case, then caution. This is a decision slide, not a universal rule.", "Start with the business question. Do not announce the best index before measuring. ROW_NUMBER() works broadly; DISTINCT ON is a PostgreSQL-specific alternative.", "Ask what result the business actually needs. What rows can be excluded early?", "Execute this SQL on the lab database. Pause to inspect the new execution plan. 8.1 Window-function approach.", "Execute this SQL on the lab database. Pause to inspect the new execution plan. 8.2 PostgreSQL-specific `DISTINCT ON`.", "Reveal use case, then caution. This is a decision slide, not a universal rule.", "Start with the business question. Do not announce the best index before measuring. Skipping thousands of records may still require scanning through them.", "Ask what result the business actually needs. What rows can be excluded early?", "Execute this SQL on the lab database. Pause to inspect the new execution plan. 9.1 OFFSET pagination.", "Execute this SQL on the lab database. Pause to inspect the new execution plan. 9.2 Keyset pagination.", "Execute this SQL on the lab database. Pause to inspect the new execution plan. 9.2 Keyset pagination.", "Reveal use case, then caution. This is a decision slide, not a universal rule.", "Start with the business question. Do not announce the best index before measuring. A partial index includes only rows meeting a stable query predicate.", "Ask what result the business actually needs. What rows can be excluded early?", "Execute this SQL on the lab database. Pause to inspect the new execution plan. 10.1 Discover status values.", "Execute this SQL on the lab database. Pause to inspect the new execution plan. 10.2 Test query before index.", "Execute this SQL on the lab database. Pause to inspect the new execution plan. 10.3 Add a targeted partial index.", "Reveal use case, then caution. This is a decision slide, not a universal rule.", "Start with the business question. Do not announce the best index before measuring. Statistics help the optimizer estimate selectivity and plan shape.", "Execute this SQL on the lab database. Pause to inspect the new execution plan. 11.1 Inspect optimizer statistics.", "Execute this SQL on the lab database. Pause to inspect the new execution plan. 11.2 Refresh statistics.", "Execute this SQL on the lab database. Pause to inspect the new execution plan. 11.3 Optional extended statistics for correlated filters.", "Reveal use case, then caution. This is a decision slide, not a universal rule.", "Start with the business question. Do not announce the best index before measuring. Compare equivalent results and repeat execution measurements.", "Ask what result the business actually needs. What rows can be excluded early?", "Ask the learners to predict the result before revealing it.", "Execute this SQL on the lab database. Pause to inspect the new execution plan. 12.2 Compare ordered query outputs when needed.", "Reveal use case, then caution. This is a decision slide, not a universal rule.", "Let participants attempt each challenge using their lab guide before displaying the suggested solution.", "Focus comparisons on semantically equivalent statements. Read buffers after warm cache can be misleading.", "Review all tactics; remind learners that PostgreSQL may choose a valid alternative plan.", "Transition to applying these skills to a real reporting workload."];let n=0;let shown=0;let notesOpen=false;let parts=[];function go(i){n=Math.max(0,Math.min(slides.length-1,i));slides.forEach((s,j)=>s.classList.toggle('active',j===n));parts=[...slides[n].querySelectorAll('.reveal')];shown=0;parts.forEach(x=>x.classList.remove('visible'));document.querySelector('#page').textContent=(n+1)+' / '+slides.length;document.querySelector('#jump').value=n;document.querySelector('#bar').style.width=((n+1)/slides.length*100)+'%';document.querySelector('#notes').textContent=notes[n];location.hash=(n+1);};function next(){if(shown<parts.length){parts[shown++].classList.add('visible')}else go(n+1)}function prev(){if(shown>0)parts[--shown].classList.remove('visible');else{go(n-1);reveal()}}function reveal(){parts.forEach(x=>x.classList.add('visible'));shown=parts.length};document.querySelector('#next').onclick=next;document.querySelector('#prev').onclick=prev;document.querySelector('#all').onclick=reveal;document.querySelector('#notesBtn').onclick=()=>{notesOpen=!notesOpen;document.querySelector('#notes').classList.toggle('show',notesOpen)};document.querySelector('#fullscreen').onclick=()=>document.documentElement.requestFullscreen?.();document.querySelector('#jump').onchange=e=>go(+e.target.value);document.addEventListener('keydown',e=>{if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName))return;if(['ArrowRight',' ','PageDown'].includes(e.key)){e.preventDefault();next()}else if(['ArrowLeft','PageUp'].includes(e.key)){e.preventDefault();prev()}else if(e.key.toLowerCase()==='n')document.querySelector('#notesBtn').click();else if(e.key.toLowerCase()==='f')document.querySelector('#fullscreen').click();else if(e.key.toLowerCase()==='r')reveal()});slides.forEach((s,i)=>{let o=document.createElement('option');o.value=i;o.textContent=(i+1)+'. '+s.dataset.title;document.querySelector('#jump').append(o)});go(Math.max(0,Math.min(slides.length-1,(parseInt(location.hash.slice(1))||1)-1)));</script></body></html>

@@ -33,7 +33,7 @@ to_number(None)
 # -----------------------------------------------------
 
 try:
-    value = int("7")
+    value = int("seven")
 except ValueError:
     print("Bad input")
 else:
