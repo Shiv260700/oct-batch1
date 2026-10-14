@@ -1,0 +1,185 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voting-pg-deployment
+  labels:
+    app: voting-pg
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: voting-pg
+  template:
+    metadata:
+      labels:
+        app: voting-pg
+    spec:
+      containers:
+      - name: db
+        image: postgres:15
+        env:
+        - name: POSTGRES_PASSWORD
+          value: postgres
+        - name: POSTGRES_HOST_AUTH_METHOD
+          value: trust
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+spec:
+  selector:
+    app: voting-pg
+  ports:
+  - protocol: TCP
+    port: 5432
+    targetPort: 5432
+  type: ClusterIP
+
+---  
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voting-redis-deployment
+  labels:
+    app: voting-redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: voting-redis
+  template:
+    metadata:
+      labels:
+        app: voting-redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+spec:
+  selector:
+    app: voting-redis
+  ports:
+  - protocol: TCP
+    port: 6379
+    targetPort: 6379
+  type: ClusterIP
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voting-worker-deployment
+  labels:
+    app: voting-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: voting-worker
+  template:
+    metadata:
+      labels:
+        app: voting-worker
+    spec:
+      containers:
+      - name: voting-worker
+        image: docker/example-voting-app-worker
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: voting-worker
+spec:
+  selector:
+    app: voting-worker
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 80
+  type: ClusterIP
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voting-vote-deployment
+  labels:
+    app: voting-vote
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: voting-vote
+  template:
+    metadata:
+      labels:
+        app: voting-vote
+    spec:
+      containers:
+      - name: voting-vote
+        image: docker/example-voting-app-vote
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: voting-vote
+spec:
+  selector:
+    app: voting-vote
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 80
+    nodePort: 30080
+  type: NodePort
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voting-result-deployment
+  labels:
+    app: voting-result
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: voting-result
+  template:
+    metadata:
+      labels:
+        app: voting-result
+    spec:
+      containers:
+      - name: voting-result
+        image: docker/example-voting-app-result
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: voting-result
+spec:
+  selector:
+    app: voting-result
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 80
+    nodePort: 30081
+  type: NodePort

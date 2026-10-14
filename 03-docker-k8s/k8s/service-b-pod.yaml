@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: service-b-pod
+  labels:
+    foo: bar
+spec:
+  containers:
+  - name: service-b-container
+    image: docker.io/nagabhushanamn/service-b:v2

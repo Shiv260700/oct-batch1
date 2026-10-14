@@ -1,0 +1,5 @@
+numpy>=2.0
+matplotlib>=3.9
+scikit-learn>=1.5
+jupyter
+torch

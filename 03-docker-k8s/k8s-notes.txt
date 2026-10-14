@@ -1,0 +1,20 @@
+
+
+how to create k8s cluster?
+-----------------------------
+
+dev/test envi
+    - minikube
+    - KinD ( we use this )
+prod envi
+    - kubeadm
+    - rancher
+cloud envi    
+    aws -> eks
+    azure -> aks
+    gcp -> gks
+    redhat -> openshift
+-----------------------------
+
+
+

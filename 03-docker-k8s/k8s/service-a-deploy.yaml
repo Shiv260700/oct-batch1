@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service-a-deployment
+  labels:
+    foo: bar
+    app: service-a
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      foo: bar
+      app: service-a
+  template:
+    metadata:
+      labels:
+        foo: bar
+        app: service-a
+    spec:
+      containers:
+      - name: service-a-container
+        image: docker.io/nagabhushanamn/service-a:v3

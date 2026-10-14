@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: service-b-rs
+  labels:
+    foo: bar
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      foo: bar
+  template:
+    metadata:
+      labels:
+        foo: bar
+    spec:
+      containers:
+      - name: service-b-container
+        image: docker.io/nagabhushanamn/service-b:v2
