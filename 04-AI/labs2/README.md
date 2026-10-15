@@ -10,6 +10,8 @@ Each lab is a complete project, done the way it is done at work.
 | `02-classification` | Which of 3,000 students will drop out? (11% yes) | stratified splits · accuracy lies · leak hunt · PR-AUC / ROC-AUC / Brier · calibration · cut-off from costs · capacity rule · test with a range · save with cut-off |
 | `03-neural-network` | Read handwritten digits (Keras) | scale + 3-way split · baseline · learning curves · overfitting · early stopping, dropout · CNN · test with a range · confidence rule · save/reload |
 | `04-text-classification` | Sort forum posts into 6 topics | leak in text (headers) · time-ordered test · empty texts · tuned TF-IDF baseline · top words · pretrained embeddings · few labels · mistakes by length · route to a person · save |
+| `05-text-generation` | Build a small GPT that writes a post from a topic + prompt | character tokenizer · topic tag control · split by document · baselines · train with best checkpoint · temperature · measured topic control · save for serving |
+| `textgen-service/` | The generator as a Docker image (`textgen-api:v1`, `:v1-amd64`) | FastAPI · input validation · /health /ready · non-root · reference K8s manifest |
 
 ## Setup
 ```bash
@@ -52,3 +54,11 @@ jupyter lab
 - 10 labels per topic: MiniLM 79% vs TF-IDF 51% · 100 per topic: 87% vs 79%
 - By length: empty 12%, 31–100 words 92%, 100+ words 94%
 - Rule (< 5 words or p < 0.5 → person): 14.2% to a person, **95.8%** on the rest
+
+**05-text-generation** (small GPT, 1.84 M weights, character-level, 6 topics)
+- Loss per character: uniform 4.57 · letter frequency 3.31 · **GPT 1.397** (best checkpoint, step 4,750 of 5,000; ≈ 5.5 min on Apple GPU)
+- Temperature 0.3 / 0.8 / 1.5 → distinct 4-grams 0.64 / 0.94 / 0.99
+- Topic control: **87%** of generated posts judged on-topic (chance 17%)
+- Saved model 7.4 MB; reload on CPU, same seed → same text
+
+**textgen-service**: image 1.3 GB · ready 1.4 s · ≈ 250 MiB · 200 characters ≈ 2 s (1 thread)

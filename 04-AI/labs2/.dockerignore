@@ -1,0 +1,6 @@
+*
+!textgen/
+!textgen-service/
+!models/textgen/weights.pt
+!models/textgen/config.json
+textgen/__pycache__

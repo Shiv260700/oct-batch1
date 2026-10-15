@@ -1219,6 +1219,297 @@ print("✓ the saved classifier sorts new posts and flags ones it can't judge")"
 """),
 ]
 
+# ---------------------------------------------------------------- Lab 5 · text generation
+NOTEBOOKS["05-text-generation"] = [
+    md("""
+# Lab 5 · Text generation: build a small GPT
+**Goal:** a model that **writes text from your input**: give it a topic and a start, it continues the post.
+
+**You will practise**
+- Turn text into numbers (a character tokenizer)
+- Steer the output with a topic tag
+- Split by document, not by position (no leak)
+- Beat simple baselines on next-character loss
+- Build a decoder-only Transformer (GPT) and train it
+- Watch for overfitting; keep the best checkpoint
+- Control creativity with temperature
+- **Measure** that the topic control works
+- Save the model for serving (lab 6)
+
+**Honest expectation:** 1.8 M weights, trained for minutes. It writes English-looking text on the right topic, not meaningful posts. Chat models use the same recipe with ~100,000× more weights and data.
+
+**How to work:** 🧠 = write your guess first · ✓ = the notebook proves the result
+"""),
+    md("""
+## 0 · Setup
+- Uses the GPU if there is one (CUDA, or Apple's MPS), else the CPU
+- The model code lives in `textgen/model.py`: the same file the web service will import
+- `RETRAIN = False` reuses a saved model if one exists
+"""),
+    code("""import os, re, time, warnings
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from sklearn.datasets import fetch_20newsgroups
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import make_pipeline
+
+from textgen.model import GPT, Config, Tokenizer, tag, save, load
+
+SEED = 0
+torch.manual_seed(SEED)
+warnings.filterwarnings("ignore")
+plt.rcParams.update({"figure.figsize": (8, 4.5), "axes.grid": True, "font.size": 12})
+DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+MODEL_DIR = Path("models/textgen")
+RETRAIN = not (MODEL_DIR / "weights.pt").exists()
+print("torch", torch.__version__, "· device", DEVICE, "· retrain", RETRAIN)"""),
+
+    md("""
+## 1 · Load and clean the text
+- Forum posts in 6 topics (the lab 4 data), headers and signatures removed
+- Keep plain ASCII, squeeze extra spaces and blank lines
+- Keep posts of 100–3,000 characters (drop near-empty and very long ones)
+"""),
+    code("""NEWSGROUPS = ["comp.graphics", "rec.autos", "rec.sport.hockey", "sci.med", "sci.space", "talk.politics.guns"]
+raw = fetch_20newsgroups(subset="train", categories=NEWSGROUPS, remove=("headers", "footers", "quotes"), random_state=SEED)
+TOPICS = [g.split(".")[-1] for g in raw.target_names]          # graphics, autos, hockey, med, space, guns
+
+def clean(text):
+    text = text.encode("ascii", "ignore").decode()
+    text = re.sub(r"[ \\t]+", " ", text)
+    return re.sub(r"\\n\\s*\\n+", "\\n", text).strip()
+
+posts = [(TOPICS[y], clean(x)) for x, y in zip(raw.data, raw.target)]
+posts = [(t, x) for t, x in posts if 100 <= len(x) <= 3000]
+print(f"{len(posts)} posts · {sum(len(x) for _, x in posts):,} characters · topics {TOPICS}")
+print("\\n--- example ---\\n", tag(posts[0][0]) + posts[0][1][:400])"""),
+
+    md("""
+## 2 · Text → numbers
+- One number per character (≈ 100 different characters)
+- Simple and fully transparent; real models use sub-word tokens instead
+- Check: encode → decode must give back the same text
+"""),
+    code("""vocab = "".join(sorted(set("".join(tag(t) + x + "\\n" for t, x in posts))))
+tok = Tokenizer(vocab)
+sample = "My car engine overheats."
+print(len(vocab), "characters ·", sample, "→", tok.encode(sample)[:10], "…")
+assert tok.decode(tok.encode(sample)) == sample
+print("✓ encode → decode is lossless")"""),
+
+    md("""
+## 3 · Steering: a topic tag
+- Every training example starts with its tag, e.g. `<space> `
+- The model learns: after `<space>`, write like a space post
+- At generation time, we choose the tag: that's the user's control
+"""),
+
+    md("""
+## 4 · Split by post, not by position
+- Validation = 10% of **whole posts** the model never trains on
+- Splitting one long text in the middle would put halves of the same post on both sides: a leak
+"""),
+    code("""rng = np.random.default_rng(SEED)
+order = rng.permutation(len(posts)); n_val = len(posts) // 10
+split = {"train": [posts[i] for i in order[n_val:]], "val": [posts[i] for i in order[:n_val]]}
+data = {k: [(torch.tensor(tok.encode(tag(t))), torch.tensor(tok.encode(x + "\\n"))) for t, x in v] for k, v in split.items()}
+print({k: len(v) for k, v in data.items()}, "posts")"""),
+
+    md("""
+## 5 · Training examples
+- Pick a post, pick a random window of its text, put the topic tag in front
+- Input = the window; target = the same window shifted one character left (predict the next character)
+"""),
+    code("""cfg = Config(vocab=vocab, topics=TOPICS)
+BATCH = 64
+gen_batch = torch.Generator().manual_seed(SEED)
+NEWLINE = tok.stoi["\\n"]
+
+def batch(split_name):
+    xs, ys = [], []
+    for _ in range(BATCH):
+        t, body = data[split_name][int(torch.randint(len(data[split_name]), (1,), generator=gen_batch))]
+        need = cfg.context + 1 - len(t)
+        if len(body) < need:
+            body = torch.cat([body, torch.full((need - len(body),), NEWLINE)])
+        start = int(torch.randint(len(body) - need + 1, (1,), generator=gen_batch))
+        window = torch.cat([t, body[start:start + need]])
+        xs.append(window[:-1]); ys.append(window[1:])
+    return torch.stack(xs).to(DEVICE), torch.stack(ys).to(DEVICE)
+
+x, y = batch("train")
+print("input :", repr(tok.decode(x[0][:60].tolist())))
+print("target:", repr(tok.decode(y[0][:60].tolist())))"""),
+
+    md("""
+## 6 · 🧠 Baselines: how good is “good”?
+- Score: **cross-entropy per character** (lower = better; the training loss)
+- Uniform guess: every character equally likely
+- Letter frequency: always predict how common each character is
+- Predict: where will the trained GPT land?
+"""),
+    code("""val_chars = torch.cat([b for _, b in data["val"]])
+counts = torch.bincount(torch.cat([b for _, b in data["train"]]), minlength=len(vocab)).float() + 1
+freq_loss = float(-(torch.log(counts / counts.sum())[val_chars]).mean())
+uniform_loss = float(np.log(len(vocab)))
+print(f"uniform {uniform_loss:.2f} · letter frequency {freq_loss:.2f}")
+my_guess_gpt_loss = 1.5""",
+         stub="""val_chars = torch.cat([b for _, b in data["val"]])
+counts = torch.bincount(torch.cat([b for _, b in data["train"]]), minlength=len(vocab)).float() + 1
+freq_loss = float(-(torch.log(counts / counts.sum())[val_chars]).mean())
+uniform_loss = float(np.log(len(vocab)))
+print(f"uniform {uniform_loss:.2f} · letter frequency {freq_loss:.2f}")
+my_guess_gpt_loss = None"""),
+
+    md("""
+## 7 · The model: a small GPT
+- Embeddings (character + position) → 4 Transformer blocks (masked attention + small network) → next-character scores
+- The mask lets each character look only at earlier ones, so it can generate left to right
+"""),
+    code("""torch.manual_seed(SEED)
+model = GPT(cfg).to(DEVICE)
+print(f"{sum(p.numel() for p in model.parameters()):,} weights")
+print("untrained:", repr(model.generate(tok, "space", "The shuttle", 80, seed=SEED)))"""),
+
+    md("""
+## 8 · Train, watching validation
+- AdamW, learning rate warm-up then decay, gradient clipping
+- Every 250 steps: measure train and validation loss
+- **Keep the best checkpoint** (lowest validation loss), not the last one
+- About 5 minutes on a laptop GPU; skipped when a saved model exists
+"""),
+    code("""STEPS, EVAL_EVERY = 5000, 250
+
+@torch.no_grad()
+def estimate(split_name, n=20):
+    model.eval()
+    loss = np.mean([F.cross_entropy(model(x).flatten(0, 1), y.flatten()).item() for x, y in (batch(split_name) for _ in range(n))])
+    model.train(); return loss
+
+if RETRAIN:
+    opt = torch.optim.AdamW(model.parameters(), lr=3e-3, weight_decay=0.1)
+    sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=3e-3, total_steps=STEPS)
+    history, best, t0 = [], float("inf"), time.time()
+    for step in range(1, STEPS + 1):
+        x, y = batch("train")
+        loss = F.cross_entropy(model(x).flatten(0, 1), y.flatten())
+        opt.zero_grad(); loss.backward(); nn.utils.clip_grad_norm_(model.parameters(), 1.0); opt.step(); sched.step()
+        if step % EVAL_EVERY == 0:
+            tr, va = estimate("train"), estimate("val")
+            history.append({"step": step, "train": tr, "val": va})
+            if va < best:
+                best = va; save(model, MODEL_DIR, {"step": step, "val_loss": round(va, 4), "baseline_loss": round(freq_loss, 4)})
+            print(f"step {step:5d} · train {tr:.3f} · val {va:.3f}{' ← best, saved' if va == best else ''} · {time.time() - t0:.0f}s")
+    pd.DataFrame(history).to_csv(MODEL_DIR / "history.csv", index=False)
+model, tok, meta = load(MODEL_DIR, DEVICE)
+history = pd.read_csv(MODEL_DIR / "history.csv")
+print("loaded best checkpoint:", meta)""",
+         stub="""STEPS, EVAL_EVERY = 5000, 250
+# TODO: write estimate(split_name) (mean loss over 20 batches, in eval mode)
+# TODO: training loop with AdamW(3e-3, weight_decay=0.1), OneCycleLR, clip_grad_norm_(1.0)
+#       every 250 steps: record train/val loss; when val improves, save(model, MODEL_DIR, {...})
+# TODO: then model, tok, meta = load(MODEL_DIR, DEVICE)"""),
+
+    md("""
+## 9 · Learning curves
+"""),
+    code("""ax = history.plot(x="step", y=["train", "val"], marker="o", ms=3)
+ax.axhline(freq_loss, ls="--", c="grey", label="letter frequency")
+ax.axvline(meta["step"], ls=":", c="green", label=f"best checkpoint (step {meta['step']})")
+ax.set_ylabel("loss per character"); ax.legend(); plt.show()
+print(f"best validation loss {meta['val_loss']:.3f} vs letter frequency {freq_loss:.2f} · uniform {uniform_loss:.2f}")
+assert meta["val_loss"] < 0.5 * freq_loss
+print("✓ the GPT's loss is less than half the letter-frequency baseline")"""),
+    md("""
+**Read the curves**
+- Training loss falls faster than validation loss: the gap is the start of overfitting
+- Dropout slows it; without dropout, validation loss turns back up (try it in “Your turn”)
+- Either way, serve the **best** checkpoint, not the last
+"""),
+
+    md("""
+## 10 · 🧠 Generate: temperature
+- Temperature divides the scores before softmax
+- Low (0.3): safe, repetitive · 1.0: as trained · high (1.5): wild, more typos
+- Predict: which temperature gives the most varied text? Which the most typos?
+"""),
+    code("""def distinct4(text):
+    grams = [text[i:i + 4] for i in range(len(text) - 3)]
+    return len(set(grams)) / max(1, len(grams))
+
+rows = []
+for temp in (0.3, 0.8, 1.5):
+    out = model.generate(tok, "space", "The shuttle", 300, temperature=temp, seed=1)
+    rows.append({"temperature": temp, "distinct 4-grams": round(distinct4(out), 2)})
+    print(f"\\n--- temperature {temp} ---\\nThe shuttle{out}")
+pd.DataFrame(rows)"""),
+
+    md("""
+## 11 · One prompt per topic
+"""),
+    code("""for topic, start in [("autos", "My car"), ("med", "The doctor said"), ("hockey", "The Leafs"), ("guns", "The new law")]:
+    print(f"--- <{topic}> ---\\n{start}{model.generate(tok, topic, start, 220, temperature=0.8, seed=2)}\\n")"""),
+
+    md("""
+## 12 · 🧠 Proof: does the topic tag really steer the text?
+- Train a topic classifier on **real** posts (character n-grams: robust to typos)
+- Generate 10 posts per topic; ask the classifier which topic each looks like
+- Chance would be 1 in 6 (17%). Predict the share that match the requested topic.
+"""),
+    code("""real = fetch_20newsgroups(subset="train", categories=NEWSGROUPS, remove=("headers", "footers", "quotes"), random_state=SEED)
+judge = make_pipeline(TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 5), sublinear_tf=True, min_df=2),
+                      LogisticRegression(C=10, max_iter=3000)).fit([clean(x) for x in real.data], real.target)
+rows = []
+for k, topic in enumerate(TOPICS):
+    outs = [model.generate(tok, topic, "", 300, temperature=0.8, seed=100 + i) for i in range(10)]
+    rows.append({"asked for": topic, "judged on topic": (judge.predict(outs) == k).mean()})
+control = pd.DataFrame(rows); control_acc = control["judged on topic"].mean()
+print(control.to_string(index=False), f"\\noverall {control_acc:.0%} (chance 17%)")
+assert control_acc >= 0.8
+print("✓ proof: the topic tag steers what the model writes")"""),
+
+    md("""
+## 13 · Saved and reloadable
+- `models/textgen/` holds `weights.pt` + `config.json` (vocabulary, topics, sizes, best step)
+- Reload on the CPU (as the server will) and check: same seed → same text
+"""),
+    code("""cpu_model, cpu_tok, cpu_meta = load(MODEL_DIR, "cpu")
+a = cpu_model.generate(cpu_tok, "space", "NASA", 120, seed=7)
+b = cpu_model.generate(cpu_tok, "space", "NASA", 120, seed=7)
+print(sorted(p.name for p in MODEL_DIR.iterdir()), "·", f"{sum(f.stat().st_size for f in MODEL_DIR.iterdir()) / 1e6:.1f} MB")
+print("NASA" + a)
+assert a == b
+print("✓ reloaded on CPU; the same seed gives the same text: ready for lab 6 (deploy)")"""),
+
+    md("""
+## 14 · Your turn
+- Set `dim=256, layers=6` in `Config`: does validation loss improve? How long does training take?
+- Remove the topic tag from training (`tag()` → `""`) and rerun the proof: what does topic control drop to?
+- Try `top_k=5` in `generate`: fewer typos?
+- Set `dropout=0.0` in `Config` and retrain: when does validation loss turn back up?
+"""),
+    code("# TODO", stub="# TODO"),
+
+    md("""
+## ✅ Checklist for every text-generation project
+- [x] Cleaned text; checked the tokenizer round-trips
+- [x] Added a control (topic tag) the user can set
+- [x] Split by document, not by position
+- [x] Compared loss with simple baselines
+- [x] Kept the best checkpoint, not the last
+- [x] Tuned temperature for the use case
+- [x] **Measured** that the control works
+- [x] Saved weights + config; reloaded on CPU; same seed → same output
+"""),
+]
+
 
 if __name__ == "__main__":
     paths = [build(name, cells) for name, cells in NOTEBOOKS.items()]

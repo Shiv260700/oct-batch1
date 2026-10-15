@@ -1,0 +1,39 @@
+# Reference only: a minimal, production-style deployment of textgen-api.
+# Adjust the image name/registry, replicas and resources for your cluster.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: textgen-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: textgen-api}
+  strategy:
+    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}      # never drop below 2 ready copies
+  template:
+    metadata:
+      labels: {app: textgen-api}
+    spec:
+      securityContext: {runAsNonRoot: true, runAsUser: 10001}
+      containers:
+        - name: api
+          image: textgen-api:v1                          # e.g. <registry>/textgen-api:v1
+          ports: [{containerPort: 8000}]
+          env:
+            - {name: MODEL_VERSION, value: v1}
+            - {name: TORCH_THREADS, value: "1"}
+          resources:
+            requests: {cpu: "1", memory: 384Mi}        # one busy thread per request; measured ≈ 250 MiB
+            limits: {cpu: "1", memory: 768Mi}
+          readinessProbe: {httpGet: {path: /ready, port: 8000}, periodSeconds: 3}
+          livenessProbe: {httpGet: {path: /health, port: 8000}, initialDelaySeconds: 15, periodSeconds: 10}
+          lifecycle:
+            preStop: {exec: {command: ["sleep", "5"]}}   # let traffic move away before shutdown
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: textgen-api
+spec:
+  selector: {app: textgen-api}
+  ports: [{port: 80, targetPort: 8000}]
