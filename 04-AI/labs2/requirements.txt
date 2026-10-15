@@ -1,0 +1,9 @@
+numpy>=2.0
+pandas
+matplotlib>=3.9
+scikit-learn>=1.5
+joblib
+jupyter
+tensorflow
+keras>=3
+sentence-transformers
