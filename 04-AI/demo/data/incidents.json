@@ -1,0 +1,85 @@
+[
+  {
+    "id": "db-pool",
+    "title": "Database connection pool exhausted",
+    "start": "2026-10-13T10:20:00+00:00",
+    "end": "2026-10-13T10:45:00+00:00",
+    "endpoint": "/api/orders",
+    "root_cause": "HikariCP connection pool exhausted (all 10 connections busy, a slow report query held them); requests waited 30 s and failed",
+    "symptom": "HTTP 500 on /api/orders with ~30 s latency",
+    "evidence": "SQLTransientConnectionException: HikariPool-1 - Connection is not available, request timed out after 30000ms",
+    "fix": "kill the long-running report query, raise maximumPoolSize, add a statement timeout (runbook: hikari-pool.md)",
+    "keywords": [
+      "hikari",
+      "pool",
+      "connection"
+    ]
+  },
+  {
+    "id": "oom",
+    "title": "Memory leak \u2192 OutOfMemoryError \u2192 Tomcat restart",
+    "start": "2026-10-14T08:00:00+00:00",
+    "end": "2026-10-14T11:04:00+00:00",
+    "endpoint": "all",
+    "root_cause": "memory leak in the product cache: heap grew from 60% to 98% until java.lang.OutOfMemoryError: Java heap space; Tomcat restarted",
+    "symptom": "Apache 502/503 and AH01102 proxy errors between 11:02 and 11:03:40 while Tomcat restarted",
+    "evidence": "java.lang.OutOfMemoryError: Java heap space",
+    "fix": "restart, take a heap dump, cap the product cache size (runbook: java-heap-oom.md)",
+    "keywords": [
+      "outofmemoryerror",
+      "heap",
+      "memory"
+    ]
+  },
+  {
+    "id": "gateway",
+    "title": "Slow payment gateway",
+    "start": "2026-10-14T16:10:00+00:00",
+    "end": "2026-10-14T16:35:00+00:00",
+    "endpoint": "/api/checkout",
+    "root_cause": "the external payment gateway responded slowly: java.net.SocketTimeoutException: Read timed out after 5 s",
+    "symptom": "/api/checkout slow (5\u201310 s) and some 504s",
+    "evidence": "java.net.SocketTimeoutException: Read timed out",
+    "fix": "check the gateway status page, enable the circuit breaker, retry with backoff (runbook: payment-gateway-timeouts.md)",
+    "keywords": [
+      "sockettimeoutexception",
+      "payment",
+      "gateway",
+      "timed out"
+    ]
+  },
+  {
+    "id": "bad-deploy",
+    "title": "Bad deploy v1.4.2",
+    "start": "2026-10-15T14:00:00+00:00",
+    "end": "2026-10-15T14:40:00+00:00",
+    "endpoint": "/api/users",
+    "root_cause": "deploy v1.4.2 introduced a NullPointerException in UserMapper.toDto (users without an email); rolled back to v1.4.1 at 14:40",
+    "symptom": "HTTP 500 on /api/users/{id} from 14:00 to 14:40",
+    "evidence": "java.lang.NullPointerException",
+    "fix": "roll back to v1.4.1, add a null check and a test (runbook: bad-deploy-rollback.md)",
+    "keywords": [
+      "nullpointerexception",
+      "usermapper",
+      "v1.4.2",
+      "deploy"
+    ]
+  },
+  {
+    "id": "brute-force",
+    "title": "Login brute force",
+    "start": "2026-10-15T22:05:00+00:00",
+    "end": "2026-10-15T22:20:00+00:00",
+    "endpoint": "/api/login",
+    "root_cause": "brute-force login attempts from IP 203.0.113.77",
+    "symptom": "about 600 HTTP 401 responses on POST /api/login from one IP",
+    "evidence": "203.0.113.77 \"POST /api/login HTTP/1.1\" 401",
+    "fix": "block the IP at Apache, enable login rate limiting (runbook: brute-force-login.md)",
+    "keywords": [
+      "203.0.113.77",
+      "brute",
+      "401",
+      "login"
+    ]
+  }
+]

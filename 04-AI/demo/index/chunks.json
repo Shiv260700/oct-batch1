@@ -1,0 +1,702 @@
+[
+ {
+  "kind": "log",
+  "file": "apache/access_log",
+  "start": "2026-10-13 10:20",
+  "line": 2688,
+  "text": "apache/access_log 2026-10-13 10:20\u20132026-10-13 10:30: 88 requests, 18 HTTP 5xx, 1 HTTP 401, p95 latency 30030 ms. Top problems: /api/orders/{id} 500.0 \u00d714; /api/orders 500.0 \u00d74; /favicon.ico 404.0 \u00d72; /api/login 401.0 \u00d71. Top client IPs: 10.0.2.244 \u00d72, 10.0.7.38 \u00d72.\n10.0.2.243 - - [13/Oct/2026:10:21:15 +0000] \"POST /api/orders HTTP/1.1\" 500 364 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 30024ms\n10.0.7.223 - - [13/Oct/2026:10:21:44 +0000] \"POST /favicon.ico HTTP/1.1\" 404 319 \"-\" \"Mozilla/5.0 (iPhone; CPU iPhone OS 17_5)\" 2ms\n10.0.7.28 - - [13/Oct/2026:10:21:58 +0000] \"GET /api/orders/3191 HTTP/1.1\" 500 141 \"-\" \"Mozilla/5.0 (iPhone; CPU iPhone OS 17_5)\" 30020ms"
+ },
+ {
+  "kind": "log",
+  "file": "apache/access_log",
+  "start": "2026-10-13 10:30",
+  "line": 2768,
+  "text": "apache/access_log 2026-10-13 10:30\u20132026-10-13 10:40: 88 requests, 15 HTTP 5xx, 0 HTTP 401, p95 latency 30033 ms. Top problems: /api/orders/{id} 500.0 \u00d715; /favicon.ico 404.0 \u00d71. Top client IPs: 10.0.4.114 \u00d71, 10.0.3.116 \u00d71.\n10.0.4.114 - - [13/Oct/2026:10:30:07 +0000] \"GET /api/orders/659 HTTP/1.1\" 500 371 \"-\" \"okhttp/4.12.0\" 30022ms\n10.0.3.116 - - [13/Oct/2026:10:30:47 +0000] \"GET /api/orders/3483 HTTP/1.1\" 500 374 \"-\" \"okhttp/4.12.0\" 30040ms\n10.0.5.35 - - [13/Oct/2026:10:30:57 +0000] \"GET /api/orders/4438 HTTP/1.1\" 500 342 \"-\" \"okhttp/4.12.0\" 30035ms"
+ },
+ {
+  "kind": "log",
+  "file": "apache/access_log",
+  "start": "2026-10-13 10:40",
+  "line": 2857,
+  "text": "apache/access_log 2026-10-13 10:40\u20132026-10-13 10:50: 95 requests, 9 HTTP 5xx, 0 HTTP 401, p95 latency 30019 ms. Top problems: /api/orders 500.0 \u00d75; /api/orders/{id} 500.0 \u00d74; /favicon.ico 404.0 \u00d71. Top client IPs: 10.0.8.125 \u00d72, 10.0.6.156 \u00d71.\n10.0.8.125 - - [13/Oct/2026:10:40:01 +0000] \"GET /api/orders/4975 HTTP/1.1\" 500 248 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 30001ms\n10.0.6.156 - - [13/Oct/2026:10:40:29 +0000] \"GET /api/orders/1364 HTTP/1.1\" 500 156 \"-\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5)\" 30023ms\n10.0.8.226 - - [13/Oct/2026:10:41:22 +0000] \"POST /api/orders HTTP/1.1\" 500 333 \"-\" \"Mozilla/5.0 (iPhone; CPU iPhone OS 17_5)\" 30038ms"
+ },
+ {
+  "kind": "log",
+  "file": "apache/access_log",
+  "start": "2026-10-14 11:00",
+  "line": 12382,
+  "text": "apache/access_log 2026-10-14 11:00\u20132026-10-14 11:10: 88 requests, 12 HTTP 5xx, 0 HTTP 401, p95 latency 39862 ms. Top problems: /api/products 503.0 \u00d73; /api/orders 502.0 \u00d72; /api/orders/{id} 503.0 \u00d72; /api/login 502.0 \u00d71. Top client IPs: 10.0.8.94 \u00d72, 10.0.5.124 \u00d71.\n10.0.5.124 - - [14/Oct/2026:11:02:11 +0000] \"GET /api/products HTTP/1.1\" 503 367 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 25575ms\n10.0.7.93 - - [14/Oct/2026:11:02:11 +0000] \"GET /api/orders/100 HTTP/1.1\" 503 213 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 13493ms\n10.0.4.114 - - [14/Oct/2026:11:02:13 +0000] \"GET /api/products HTTP/1.1\" 503 283 \"-\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5)\" 42295ms"
+ },
+ {
+  "kind": "log",
+  "file": "apache/access_log",
+  "start": "2026-10-14 16:10",
+  "line": 15199,
+  "text": "apache/access_log 2026-10-14 16:10\u20132026-10-14 16:20: 94 requests, 1 HTTP 5xx, 1 HTTP 401, p95 latency 101 ms. Top problems: /api/checkout 200.0 \u00d71; /api/checkout 504.0 \u00d71; /api/login 401.0 \u00d71. Top client IPs: 10.0.3.211 \u00d71, 10.0.3.76 \u00d71.\n10.0.3.211 - - [14/Oct/2026:16:12:48 +0000] \"POST /api/checkout HTTP/1.1\" 200 472 \"-\" \"Mozilla/5.0 (iPhone; CPU iPhone OS 17_5)\" 9449ms\n10.0.3.76 - - [14/Oct/2026:16:16:25 +0000] \"POST /api/checkout HTTP/1.1\" 504 195 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 10031ms\n10.0.8.150 - - [14/Oct/2026:16:19:59 +0000] \"POST /api/login HTTP/1.1\" 401 213 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 34ms"
+ },
+ {
+  "kind": "log",
+  "file": "apache/access_log",
+  "start": "2026-10-14 16:30",
+  "line": 15363,
+  "text": "apache/access_log 2026-10-14 16:30\u20132026-10-14 16:40: 82 requests, 2 HTTP 5xx, 0 HTTP 401, p95 latency 6438 ms. Top problems: /api/checkout 200.0 \u00d73; /api/checkout 504.0 \u00d72. Top client IPs: 10.0.4.103 \u00d71, 10.0.5.246 \u00d71.\n10.0.4.103 - - [14/Oct/2026:16:30:09 +0000] \"POST /api/checkout HTTP/1.1\" 200 1982 \"-\" \"Mozilla/5.0 (iPhone; CPU iPhone OS 17_5)\" 9520ms\n10.0.5.246 - - [14/Oct/2026:16:30:36 +0000] \"POST /api/checkout HTTP/1.1\" 200 2978 \"-\" \"Mozilla/5.0 (iPhone; CPU iPhone OS 17_5)\" 6760ms\n10.0.3.195 - - [14/Oct/2026:16:32:33 +0000] \"POST /api/checkout HTTP/1.1\" 504 285 \"-\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5)\" 10006ms"
+ },
+ {
+  "kind": "log",
+  "file": "apache/access_log",
+  "start": "2026-10-15 14:00",
+  "line": 23370,
+  "text": "apache/access_log 2026-10-15 14:00\u20132026-10-15 14:10: 100 requests, 6 HTTP 5xx, 1 HTTP 401, p95 latency 133 ms. Top problems: /api/users/{id} 500.0 \u00d76; /favicon.ico 404.0 \u00d72; /api/login 401.0 \u00d71. Top client IPs: 10.0.3.76 \u00d71, 10.0.2.32 \u00d71.\n10.0.3.76 - - [15/Oct/2026:14:00:25 +0000] \"GET /favicon.ico HTTP/1.1\" 404 148 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 2ms\n10.0.2.32 - - [15/Oct/2026:14:01:41 +0000] \"GET /api/users/451 HTTP/1.1\" 500 192 \"-\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5)\" 40ms\n10.0.7.142 - - [15/Oct/2026:14:02:39 +0000] \"GET /api/users/3022 HTTP/1.1\" 500 292 \"-\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5)\" 41ms"
+ },
+ {
+  "kind": "log",
+  "file": "apache/access_log",
+  "start": "2026-10-15 14:10",
+  "line": 23470,
+  "text": "apache/access_log 2026-10-15 14:10\u20132026-10-15 14:20: 91 requests, 9 HTTP 5xx, 1 HTTP 401, p95 latency 168 ms. Top problems: /api/users/{id} 500.0 \u00d79; /api/login 401.0 \u00d71; /favicon.ico 404.0 \u00d71. Top client IPs: 10.0.9.26 \u00d71, 10.0.9.245 \u00d71.\n10.0.9.26 - - [15/Oct/2026:14:10:39 +0000] \"GET /api/users/4732 HTTP/1.1\" 500 312 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 51ms\n10.0.9.245 - - [15/Oct/2026:14:11:27 +0000] \"GET /api/users/4825 HTTP/1.1\" 500 110 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 46ms\n10.0.4.97 - - [15/Oct/2026:14:11:47 +0000] \"POST /api/login HTTP/1.1\" 401 112 \"-\" \"Mozilla/5.0 (iPhone; CPU iPhone OS 17_5)\" 89ms"
+ },
+ {
+  "kind": "log",
+  "file": "apache/access_log",
+  "start": "2026-10-15 14:20",
+  "line": 23561,
+  "text": "apache/access_log 2026-10-15 14:20\u20132026-10-15 14:30: 92 requests, 8 HTTP 5xx, 2 HTTP 401, p95 latency 168 ms. Top problems: /api/users/{id} 500.0 \u00d78; /api/login 401.0 \u00d72; /favicon.ico 404.0 \u00d71. Top client IPs: 10.0.9.26 \u00d71, 10.0.9.94 \u00d71.\n10.0.9.26 - - [15/Oct/2026:14:20:34 +0000] \"GET /api/users/4335 HTTP/1.1\" 500 100 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 33ms\n10.0.9.94 - - [15/Oct/2026:14:21:24 +0000] \"GET /api/users/2442 HTTP/1.1\" 500 284 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 33ms\n10.0.1.160 - - [15/Oct/2026:14:23:10 +0000] \"GET /api/users/1103 HTTP/1.1\" 500 279 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\" 46ms"
+ },
+ {
+  "kind": "log",
+  "file": "apache/access_log",
+  "start": "2026-10-15 14:30",
+  "line": 23657,
+  "text": "apache/access_log 2026-10-15 14:30\u20132026-10-15 14:40: 94 requests, 4 HTTP 5xx, 0 HTTP 401, p95 latency 304 ms. Top problems: /api/users/{id} 500.0 \u00d74. Top client IPs: 10.0.2.17 \u00d71, 10.0.8.19 \u00d71.\n10.0.2.17 - - [15/Oct/2026:14:30:59 +0000] \"GET /api/users/3192 HTTP/1.1\" 500 113 \"-\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5)\" 63ms\n10.0.8.19 - - [15/Oct/2026:14:32:54 +0000] \"GET /api/users/1165 HTTP/1.1\" 500 196 \"-\" \"okhttp/4.12.0\" 17ms\n10.0.3.178 - - [15/Oct/2026:14:33:03 +0000] \"GET /api/users/4185 HTTP/1.1\" 500 364 \"-\" \"okhttp/4.12.0\" 59ms"
+ },
+ {
+  "kind": "log",
+  "file": "apache/access_log",
+  "start": "2026-10-15 22:00",
+  "line": 27708,
+  "text": "apache/access_log 2026-10-15 22:00\u20132026-10-15 22:10: 231 requests, 0 HTTP 5xx, 200 HTTP 401, p95 latency 118 ms. Top problems: /api/login 401.0 \u00d7200. Top client IPs: 203.0.113.77 \u00d7200.\n203.0.113.77 - - [15/Oct/2026:22:05:00 +0000] \"POST /api/login HTTP/1.1\" 401 112 \"-\" \"python-requests/2.31\" 87ms\n203.0.113.77 - - [15/Oct/2026:22:05:01 +0000] \"POST /api/login HTTP/1.1\" 401 112 \"-\" \"python-requests/2.31\" 84ms\n203.0.113.77 - - [15/Oct/2026:22:05:03 +0000] \"POST /api/login HTTP/1.1\" 401 112 \"-\" \"python-requests/2.31\" 67ms"
+ },
+ {
+  "kind": "log",
+  "file": "apache/access_log",
+  "start": "2026-10-15 22:10",
+  "line": 27924,
+  "text": "apache/access_log 2026-10-15 22:10\u20132026-10-15 22:20: 428 requests, 0 HTTP 5xx, 400 HTTP 401, p95 latency 118 ms. Top problems: /api/login 401.0 \u00d7400. Top client IPs: 203.0.113.77 \u00d7400.\n203.0.113.77 - - [15/Oct/2026:22:10:00 +0000] \"POST /api/login HTTP/1.1\" 401 112 \"-\" \"python-requests/2.31\" 116ms\n203.0.113.77 - - [15/Oct/2026:22:10:01 +0000] \"POST /api/login HTTP/1.1\" 401 112 \"-\" \"python-requests/2.31\" 86ms\n203.0.113.77 - - [15/Oct/2026:22:10:03 +0000] \"POST /api/login HTTP/1.1\" 401 112 \"-\" \"python-requests/2.31\" 96ms"
+ },
+ {
+  "kind": "log",
+  "file": "apache/error_log",
+  "start": "2026-10-13 02:20",
+  "line": 1,
+  "text": "apache/error_log 2026-10-13 02:20\u20132026-10-13 02:30:\nINFO \u00d71: core: [client 10.0.2.63:42146] AH00128: File does not exist: /var/www/html/favicon.ico"
+ },
+ {
+  "kind": "log",
+  "file": "apache/error_log",
+  "start": "2026-10-13 09:50",
+  "line": 2,
+  "text": "apache/error_log 2026-10-13 09:50\u20132026-10-13 10:00:\nINFO \u00d71: core: [client 10.0.7.14:44183] AH00128: File does not exist: /var/www/html/favicon.ico"
+ },
+ {
+  "kind": "log",
+  "file": "apache/error_log",
+  "start": "2026-10-13 11:50",
+  "line": 3,
+  "text": "apache/error_log 2026-10-13 11:50\u20132026-10-13 12:00:\nINFO \u00d71: core: [client 10.0.5.228:55930] AH00128: File does not exist: /var/www/html/favicon.ico"
+ },
+ {
+  "kind": "log",
+  "file": "apache/error_log",
+  "start": "2026-10-13 14:00",
+  "line": 4,
+  "text": "apache/error_log 2026-10-13 14:00\u20132026-10-13 14:10:\nINFO \u00d71: core: [client 10.0.4.97:44503] AH00128: File does not exist: /var/www/html/favicon.ico"
+ },
+ {
+  "kind": "log",
+  "file": "apache/error_log",
+  "start": "2026-10-14 05:50",
+  "line": 5,
+  "text": "apache/error_log 2026-10-14 05:50\u20132026-10-14 06:00:\nINFO \u00d71: core: [client 10.0.7.223:40657] AH00128: File does not exist: /var/www/html/favicon.ico"
+ },
+ {
+  "kind": "log",
+  "file": "apache/error_log",
+  "start": "2026-10-14 11:00",
+  "line": 6,
+  "text": "apache/error_log 2026-10-14 11:00\u20132026-10-14 11:10:\nERROR \u00d79: proxy_http: (70007)The timeout specified has expired: AH01102: error reading status line from remote server 127.0.0.1:8080\nERROR \u00d79: proxy: (111)Connection refused: AH00957: http: attempt to connect to 127.0.0.1:8080 (localhost) failed"
+ },
+ {
+  "kind": "log",
+  "file": "apache/error_log",
+  "start": "2026-10-14 19:20",
+  "line": 24,
+  "text": "apache/error_log 2026-10-14 19:20\u20132026-10-14 19:30:\nINFO \u00d71: core: [client 10.0.6.188:43523] AH00128: File does not exist: /var/www/html/favicon.ico"
+ },
+ {
+  "kind": "log",
+  "file": "apache/error_log",
+  "start": "2026-10-14 21:50",
+  "line": 25,
+  "text": "apache/error_log 2026-10-14 21:50\u20132026-10-14 22:00:\nINFO \u00d71: core: [client 10.0.3.178:31567] AH00128: File does not exist: /var/www/html/favicon.ico"
+ },
+ {
+  "kind": "log",
+  "file": "apache/error_log",
+  "start": "2026-10-14 23:10",
+  "line": 26,
+  "text": "apache/error_log 2026-10-14 23:10\u20132026-10-14 23:20:\nINFO \u00d71: core: [client 10.0.6.244:59251] AH00128: File does not exist: /var/www/html/favicon.ico"
+ },
+ {
+  "kind": "log",
+  "file": "apache/error_log",
+  "start": "2026-10-15 05:30",
+  "line": 27,
+  "text": "apache/error_log 2026-10-15 05:30\u20132026-10-15 05:40:\nINFO \u00d71: core: [client 10.0.3.30:56308] AH00128: File does not exist: /var/www/html/favicon.ico"
+ },
+ {
+  "kind": "log",
+  "file": "apache/error_log",
+  "start": "2026-10-15 09:40",
+  "line": 28,
+  "text": "apache/error_log 2026-10-15 09:40\u20132026-10-15 09:50:\nINFO \u00d71: core: [client 10.0.9.245:56394] AH00128: File does not exist: /var/www/html/favicon.ico"
+ },
+ {
+  "kind": "log",
+  "file": "apache/error_log",
+  "start": "2026-10-15 16:20",
+  "line": 29,
+  "text": "apache/error_log 2026-10-15 16:20\u20132026-10-15 16:30:\nINFO \u00d71: core: [client 10.0.2.63:31207] AH00128: File does not exist: /var/www/html/favicon.ico"
+ },
+ {
+  "kind": "log",
+  "file": "apache/error_log",
+  "start": "2026-10-15 21:10",
+  "line": 30,
+  "text": "apache/error_log 2026-10-15 21:10\u20132026-10-15 21:20:\nINFO \u00d71: core: [client 10.0.2.32:53512] AH00128: File does not exist: /var/www/html/favicon.ico"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-13 00:50",
+  "line": 1,
+  "text": "app/application.log 2026-10-13 00:50\u20132026-10-13 01:00:\nINFO \u00d71: ProductCache: Cache refresh done: 9653 products in 700 ms"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-13 02:00",
+  "line": 2,
+  "text": "app/application.log 2026-10-13 02:00\u20132026-10-13 02:10:\nINFO \u00d71: NightlyReport: Nightly sales report finished in 41 s"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-13 03:00",
+  "line": 3,
+  "text": "app/application.log 2026-10-13 03:00\u20132026-10-13 03:10:\nINFO \u00d71: ProductCache: Cache refresh done: 10051 products in 754 ms"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-13 06:50",
+  "line": 4,
+  "text": "app/application.log 2026-10-13 06:50\u20132026-10-13 07:00:\nINFO \u00d71: ProductCache: Cache refresh done: 9066 products in 431 ms"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-13 09:00",
+  "line": 5,
+  "text": "app/application.log 2026-10-13 09:00\u20132026-10-13 09:10:\nINFO \u00d71: ShopApplication: Started ShopApplication v1.4.1 in 6.2 seconds"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-13 09:30",
+  "line": 6,
+  "text": "app/application.log 2026-10-13 09:30\u20132026-10-13 09:40:\nINFO \u00d71: ProductCache: Cache refresh done: 10056 products in 236 ms"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-13 10:10",
+  "line": 7,
+  "text": "app/application.log 2026-10-13 10:10\u20132026-10-13 10:20:\nINFO \u00d71: SalesReport: Started ad-hoc sales report for 2026-Q3 (requested by finance)"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-13 10:20",
+  "line": 8,
+  "text": "app/application.log 2026-10-13 10:20\u20132026-10-13 10:30:\nWARN \u00d71: HikariPool: HikariPool-1 - Pool stats (total=10, active=10, idle=0, waiting=37)\nERROR \u00d715: OrderService: java.sql.SQLTransientConnectionException: HikariPool-1 - Connection is not available, request timed out after 30000ms.\nstack trace: at com.zaxxer.hikari.pool.HikariPool.createTimeoutException(HikariPool.java:696) | at com.zaxxer.hikari.pool.HikariPool.getConnection(HikariPool.java:181)"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-13 10:30",
+  "line": 84,
+  "text": "app/application.log 2026-10-13 10:30\u20132026-10-13 10:40:\nERROR \u00d718: OrderService: java.sql.SQLTransientConnectionException: HikariPool-1 - Connection is not available, request timed out after 30000ms.\nstack trace: at com.zaxxer.hikari.pool.HikariPool.createTimeoutException(HikariPool.java:696) | at com.zaxxer.hikari.pool.HikariPool.getConnection(HikariPool.java:181)"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-13 10:40",
+  "line": 174,
+  "text": "app/application.log 2026-10-13 10:40\u20132026-10-13 10:50:\nERROR \u00d79: OrderService: java.sql.SQLTransientConnectionException: HikariPool-1 - Connection is not available, request timed out after 30000ms.\nINFO \u00d71: SalesReport: Ad-hoc sales report cancelled by DBA after 25 min\nstack trace: at com.zaxxer.hikari.pool.HikariPool.createTimeoutException(HikariPool.java:696) | at com.zaxxer.hikari.pool.HikariPool.getConnection(HikariPool.java:181)"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-13 12:50",
+  "line": 220,
+  "text": "app/application.log 2026-10-13 12:50\u20132026-10-13 13:00:\nINFO \u00d71: ProductCache: Cache refresh done: 12419 products in 556 ms"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-13 15:00",
+  "line": 221,
+  "text": "app/application.log 2026-10-13 15:00\u20132026-10-13 15:10:\nINFO \u00d71: ProductCache: Cache refresh done: 12511 products in 431 ms"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-13 18:30",
+  "line": 222,
+  "text": "app/application.log 2026-10-13 18:30\u20132026-10-13 18:40:\nINFO \u00d71: ProductCache: Cache refresh done: 12440 products in 400 ms"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-13 21:40",
+  "line": 223,
+  "text": "app/application.log 2026-10-13 21:40\u20132026-10-13 21:50:\nINFO \u00d71: ProductCache: Cache refresh done: 10116 products in 621 ms"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-14 00:10",
+  "line": 224,
+  "text": "app/application.log 2026-10-14 00:10\u20132026-10-14 00:20:\nINFO \u00d71: ProductCache: Cache refresh done: 11836 products in 660 ms"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-14 02:00",
+  "line": 225,
+  "text": "app/application.log 2026-10-14 02:00\u20132026-10-14 02:10:\nINFO \u00d71: NightlyReport: Nightly sales report finished in 41 s"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-14 03:50",
+  "line": 226,
+  "text": "app/application.log 2026-10-14 03:50\u20132026-10-14 04:00:\nINFO \u00d71: ProductCache: Cache refresh done: 12369 products in 518 ms"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-14 06:10",
+  "line": 227,
+  "text": "app/application.log 2026-10-14 06:10\u20132026-10-14 06:20:\nINFO \u00d71: ProductCache: Cache refresh done: 11105 products in 581 ms"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-14 08:00",
+  "line": 228,
+  "text": "app/application.log 2026-10-14 08:00\u20132026-10-14 08:10:\nINFO \u00d71: ProductCache: Heap usage 60% after GC; product cache size 12000 entries"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-14 08:10",
+  "line": 229,
+  "text": "app/application.log 2026-10-14 08:10\u20132026-10-14 08:20:\nINFO \u00d71: ProductCache: Heap usage 62% after GC; product cache size 16300 entries"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-14 08:20",
+  "line": 230,
+  "text": "app/application.log 2026-10-14 08:20\u20132026-10-14 08:30:\nINFO \u00d71: ProductCache: Heap usage 64% after GC; product cache size 20600 entries"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-14 08:30",
+  "line": 231,
+  "text": "app/application.log 2026-10-14 08:30\u20132026-10-14 08:40:\nINFO \u00d71: ProductCache: Heap usage 66% after GC; product cache size 24900 entries"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-14 08:40",
+  "line": 232,
+  "text": "app/application.log 2026-10-14 08:40\u20132026-10-14 08:50:\nINFO \u00d71: ProductCache: Heap usage 68% after GC; product cache size 29200 entries"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-14 08:50",
+  "line": 233,
+  "text": "app/application.log 2026-10-14 08:50\u20132026-10-14 09:00:\nINFO \u00d71: ProductCache: Heap usage 70% after GC; product cache size 33500 entries"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-14 09:00",
+  "line": 234,
+  "text": "app/application.log 2026-10-14 09:00\u20132026-10-14 09:10:\nINFO \u00d71: ProductCache: Heap usage 74% after GC; product cache size 37800 entries"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-14 09:10",
+  "line": 235,
+  "text": "app/application.log 2026-10-14 09:10\u20132026-10-14 09:20:\nINFO \u00d71: ProductCache: Heap usage 76% after GC; product cache size 42100 entries"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-14 09:20",
+  "line": 236,
+  "text": "app/application.log 2026-10-14 09:20\u20132026-10-14 09:30:\nINFO \u00d71: ProductCache: Heap usage 78% after GC; product cache size 46400 entries"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-14 09:30",
+  "line": 237,
+  "text": "app/application.log 2026-10-14 09:30\u20132026-10-14 09:40:\nWARN \u00d71: ProductCache: Heap usage 80% after GC; product cache size 50700 entries"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-14 09:40",
+  "line": 238,
+  "text": "app/application.log 2026-10-14 09:40\u20132026-10-14 09:50:\nWARN \u00d71: ProductCache: Heap usage 82% after GC; product cache size 55000 entries"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-14 09:50",
+  "line": 239,
+  "text": "app/application.log 2026-10-14 09:50\u20132026-10-14 10:00:\nWARN \u00d71: ProductCache: Heap usage 84% after GC; product cache size 59300 entries\nINFO \u00d71: ProductCache: Cache refresh done: 11168 products in 566 ms"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-14 10:00",
+  "line": 241,
+  "text": "app/application.log 2026-10-14 10:00\u20132026-10-14 10:10:\nWARN \u00d71: ProductCache: Heap usage 88% after GC; product cache size 63600 entries"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-14 10:10",
+  "line": 242,
+  "text": "app/application.log 2026-10-14 10:10\u20132026-10-14 10:20:\nWARN \u00d71: ProductCache: Heap usage 90% after GC; product cache size 67900 entries"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-14 10:20",
+  "line": 243,
+  "text": "app/application.log 2026-10-14 10:20\u20132026-10-14 10:30:\nWARN \u00d71: ProductCache: Heap usage 92% after GC; product cache size 72200 entries"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-14 10:30",
+  "line": 244,
+  "text": "app/application.log 2026-10-14 10:30\u20132026-10-14 10:40:\nWARN \u00d71: ProductCache: Heap usage 94% after GC; product cache size 76500 entries"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-14 10:40",
+  "line": 245,
+  "text": "app/application.log 2026-10-14 10:40\u20132026-10-14 10:50:\nWARN \u00d71: ProductCache: Heap usage 96% after GC; product cache size 80800 entries"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-14 10:50",
+  "line": 246,
+  "text": "app/application.log 2026-10-14 10:50\u20132026-10-14 11:00:\nWARN \u00d71: ProductCache: Heap usage 98% after GC; product cache size 85100 entries"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-14 11:00",
+  "line": 247,
+  "text": "app/application.log 2026-10-14 11:00\u20132026-10-14 11:10:\nWARN \u00d71: ProductCache: Heap usage 98% after GC; product cache size 89400 entries"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-14 12:20",
+  "line": 248,
+  "text": "app/application.log 2026-10-14 12:20\u20132026-10-14 12:30:\nINFO \u00d71: ProductCache: Cache refresh done: 10823 products in 468 ms"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-14 15:10",
+  "line": 249,
+  "text": "app/application.log 2026-10-14 15:10\u20132026-10-14 15:20:\nINFO \u00d71: ProductCache: Cache refresh done: 9451 products in 481 ms"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-14 16:10",
+  "line": 250,
+  "text": "app/application.log 2026-10-14 16:10\u20132026-10-14 16:20:\nERROR \u00d72: PaymentClient: Payment authorisation failed: java.net.SocketTimeoutException: Read timed out\nstack trace: java.net.SocketTimeoutException: Read timed out | at java.base/sun.nio.ch.NioSocketImpl.timedRead(NioSocketImpl.java:288)"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-14 16:20",
+  "line": 258,
+  "text": "app/application.log 2026-10-14 16:20\u20132026-10-14 16:30:\nERROR \u00d72: PaymentClient: Payment authorisation failed: java.net.SocketTimeoutException: Read timed out\nstack trace: java.net.SocketTimeoutException: Read timed out | at java.base/sun.nio.ch.NioSocketImpl.timedRead(NioSocketImpl.java:288)"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-14 16:30",
+  "line": 266,
+  "text": "app/application.log 2026-10-14 16:30\u20132026-10-14 16:40:\nERROR \u00d75: PaymentClient: Payment authorisation failed: java.net.SocketTimeoutException: Read timed out\nINFO \u00d71: PaymentClient: Payment gateway latency back to normal (p95 310 ms)\nstack trace: java.net.SocketTimeoutException: Read timed out | at java.base/sun.nio.ch.NioSocketImpl.timedRead(NioSocketImpl.java:288)"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-14 18:20",
+  "line": 287,
+  "text": "app/application.log 2026-10-14 18:20\u20132026-10-14 18:30:\nINFO \u00d71: ProductCache: Cache refresh done: 10435 products in 672 ms"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-14 21:50",
+  "line": 288,
+  "text": "app/application.log 2026-10-14 21:50\u20132026-10-14 22:00:\nINFO \u00d71: ProductCache: Cache refresh done: 9933 products in 474 ms"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-15 00:50",
+  "line": 289,
+  "text": "app/application.log 2026-10-15 00:50\u20132026-10-15 01:00:\nINFO \u00d71: ProductCache: Cache refresh done: 12467 products in 444 ms"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-15 02:00",
+  "line": 290,
+  "text": "app/application.log 2026-10-15 02:00\u20132026-10-15 02:10:\nINFO \u00d71: NightlyReport: Nightly sales report finished in 41 s"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-15 03:20",
+  "line": 291,
+  "text": "app/application.log 2026-10-15 03:20\u20132026-10-15 03:30:\nINFO \u00d71: ProductCache: Cache refresh done: 12458 products in 231 ms"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-15 06:50",
+  "line": 292,
+  "text": "app/application.log 2026-10-15 06:50\u20132026-10-15 07:00:\nINFO \u00d71: ProductCache: Cache refresh done: 9000 products in 799 ms"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-15 09:30",
+  "line": 293,
+  "text": "app/application.log 2026-10-15 09:30\u20132026-10-15 09:40:\nINFO \u00d71: ProductCache: Cache refresh done: 10932 products in 531 ms"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-15 12:20",
+  "line": 294,
+  "text": "app/application.log 2026-10-15 12:20\u20132026-10-15 12:30:\nINFO \u00d71: ProductCache: Cache refresh done: 9519 products in 220 ms"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-15 14:00",
+  "line": 295,
+  "text": "app/application.log 2026-10-15 14:00\u20132026-10-15 14:10:\nINFO \u00d71: ShopApplication: Started ShopApplication v1.4.2 in 6.2 seconds\nERROR \u00d76: UserController: Request failed: java.lang.NullPointerException: Cannot invoke \"String.toLowerCase()\" because \"user.email\" is null\nstack trace: java.lang.NullPointerException: Cannot invoke \"String.toLowerCase()\" because \"user.email\" is null | at c.shop.users.UserMapper.toDto(UserMapper.java:31)"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-15 14:10",
+  "line": 320,
+  "text": "app/application.log 2026-10-15 14:10\u20132026-10-15 14:20:\nERROR \u00d79: UserController: Request failed: java.lang.NullPointerException: Cannot invoke \"String.toLowerCase()\" because \"user.email\" is null\nstack trace: java.lang.NullPointerException: Cannot invoke \"String.toLowerCase()\" because \"user.email\" is null | at c.shop.users.UserMapper.toDto(UserMapper.java:31)"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-15 14:20",
+  "line": 356,
+  "text": "app/application.log 2026-10-15 14:20\u20132026-10-15 14:30:\nERROR \u00d78: UserController: Request failed: java.lang.NullPointerException: Cannot invoke \"String.toLowerCase()\" because \"user.email\" is null\nstack trace: java.lang.NullPointerException: Cannot invoke \"String.toLowerCase()\" because \"user.email\" is null | at c.shop.users.UserMapper.toDto(UserMapper.java:31)"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-15 14:30",
+  "line": 388,
+  "text": "app/application.log 2026-10-15 14:30\u20132026-10-15 14:40:\nERROR \u00d74: UserController: Request failed: java.lang.NullPointerException: Cannot invoke \"String.toLowerCase()\" because \"user.email\" is null\nstack trace: java.lang.NullPointerException: Cannot invoke \"String.toLowerCase()\" because \"user.email\" is null | at c.shop.users.UserMapper.toDto(UserMapper.java:31)"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-15 14:40",
+  "line": 404,
+  "text": "app/application.log 2026-10-15 14:40\u20132026-10-15 14:50:\nINFO \u00d71: ShopApplication: Started ShopApplication v1.4.1 in 6.2 seconds"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-15 15:40",
+  "line": 405,
+  "text": "app/application.log 2026-10-15 15:40\u20132026-10-15 15:50:\nINFO \u00d71: ProductCache: Cache refresh done: 10204 products in 588 ms"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-15 18:00",
+  "line": 406,
+  "text": "app/application.log 2026-10-15 18:00\u20132026-10-15 18:10:\nINFO \u00d71: ProductCache: Cache refresh done: 9062 products in 771 ms"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-15 21:00",
+  "line": 407,
+  "text": "app/application.log 2026-10-15 21:00\u20132026-10-15 21:10:\nINFO \u00d71: ProductCache: Cache refresh done: 10082 products in 504 ms"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-15 22:00",
+  "line": 408,
+  "text": "app/application.log 2026-10-15 22:00\u20132026-10-15 22:10:\nWARN \u00d71: LoginController: Failed login for user \"admin\" from 203.0.113.77 (1 failures in a row)\nWARN \u00d71: LoginController: Failed login for user \"admin\" from 203.0.113.77 (51 failures in a row)\nWARN \u00d71: LoginController: Failed login for user \"admin\" from 203.0.113.77 (101 failures in a row)\nWARN \u00d71: LoginController: Failed login for user \"admin\" from 203.0.113.77 (151 failures in a row)"
+ },
+ {
+  "kind": "log",
+  "file": "app/application.log",
+  "start": "2026-10-15 22:10",
+  "line": 412,
+  "text": "app/application.log 2026-10-15 22:10\u20132026-10-15 22:20:\nWARN \u00d71: LoginController: Failed login for user \"admin\" from 203.0.113.77 (201 failures in a row)\nWARN \u00d71: LoginController: Failed login for user \"admin\" from 203.0.113.77 (251 failures in a row)\nWARN \u00d71: LoginController: Failed login for user \"admin\" from 203.0.113.77 (301 failures in a row)\nWARN \u00d71: LoginController: Failed login for user \"admin\" from 203.0.113.77 (351 failures in a row)\nWARN \u00d71: LoginController: Failed login for user \"admin\" from 203.0.113.77 (401 failures in a row)\nWARN \u00d71: LoginController: Failed login for user \"admin\" from 203.0.113.77 (451 failures in a row)\nWARN \u00d71: LoginController: Failed login for user \"admin\" from 203.0.113.77 (501 failures in a row)\nWARN \u00d71: LoginController: Failed login for user \"admin\" from 203.0.113.77 (551 failures in a row)"
+ },
+ {
+  "kind": "log",
+  "file": "deploys.log",
+  "start": "2026-10-13 09:00",
+  "line": 1,
+  "text": "deploys.log 2026-10-13 09:00\u20132026-10-13 09:10:\nINFO \u00d71: deploy shop-app v1.4.1 (ok)"
+ },
+ {
+  "kind": "log",
+  "file": "deploys.log",
+  "start": "2026-10-15 14:00",
+  "line": 2,
+  "text": "deploys.log 2026-10-15 14:00\u20132026-10-15 14:10:\nINFO \u00d71: deploy shop-app v1.4.2 (by ci-bot, commit 9f2c1ab \"map user email to lowercase\")"
+ },
+ {
+  "kind": "log",
+  "file": "deploys.log",
+  "start": "2026-10-15 14:40",
+  "line": 3,
+  "text": "deploys.log 2026-10-15 14:40\u20132026-10-15 14:50:\nINFO \u00d71: rollback shop-app to v1.4.1 (by on-call: errors on /api/users)"
+ },
+ {
+  "kind": "log",
+  "file": "tomcat/catalina.out",
+  "start": "2026-10-13 00:00",
+  "line": 1,
+  "text": "tomcat/catalina.out 2026-10-13 00:00\u20132026-10-13 00:10:\nINFO \u00d71: reload: Log rotation complete"
+ },
+ {
+  "kind": "log",
+  "file": "tomcat/catalina.out",
+  "start": "2026-10-14 00:00",
+  "line": 2,
+  "text": "tomcat/catalina.out 2026-10-14 00:00\u20132026-10-14 00:10:\nINFO \u00d71: reload: Log rotation complete"
+ },
+ {
+  "kind": "log",
+  "file": "tomcat/catalina.out",
+  "start": "2026-10-14 11:00",
+  "line": 3,
+  "text": "tomcat/catalina.out 2026-10-14 11:00\u20132026-10-14 11:10:\nERROR \u00d71: Exception in thread \"http-nio-8080-exec-17\" java.lang.OutOfMemoryError: Java heap space\nERROR \u00d71: await: Tomcat is shutting down after a fatal error\nINFO \u00d71: start: Server startup in [5432] milliseconds\nstack trace: at java.base/java.util.Arrays.copyOf(Arrays.java:3537) | at c.shop.catalog.ProductCache.put(ProductCache.java:63)"
+ },
+ {
+  "kind": "log",
+  "file": "tomcat/catalina.out",
+  "start": "2026-10-15 00:00",
+  "line": 8,
+  "text": "tomcat/catalina.out 2026-10-15 00:00\u20132026-10-15 00:10:\nINFO \u00d71: reload: Log rotation complete"
+ },
+ {
+  "kind": "kb",
+  "file": "kb/architecture.md",
+  "start": "",
+  "line": 1,
+  "text": "# shop-app architecture\n\n- Apache httpd 2.4 on port 443 terminates TLS and proxies to Tomcat with mod_proxy (127.0.0.1:8080, timeout 60 s).\n- shop-app: Java 17, Spring Boot 3 on Tomcat 10, heap -Xmx2g, 40 request threads.\n- Database: PostgreSQL 15 through HikariCP (maximumPoolSize 10, connectionTimeout 30000 ms).\n- Payments: external gateway over HTTPS, read timeout 5 s.\n- Logs: Apache access_log and error_log; application.log (logback); catalina.out (Tomcat); deploys.log (CI).\n"
+ },
+ {
+  "kind": "kb",
+  "file": "kb/postmortems/2026-08-14-oom.md",
+  "start": "",
+  "line": 1,
+  "text": "# Post-mortem 2026-08-14: Tomcat OutOfMemoryError\n\nAn image cache without a size limit grew until `java.lang.OutOfMemoryError: Java heap space`. Tomcat restarted; Apache returned 502 for 90 s.\nFix: added a maximum size to the cache; enabled heap dumps on OOM.\nLesson: alert when heap after GC stays above 80%.\n"
+ },
+ {
+  "kind": "kb",
+  "file": "kb/postmortems/2026-09-02-db-pool.md",
+  "start": "",
+  "line": 1,
+  "text": "# Post-mortem 2026-09-02: checkout down 18 min (DB pool)\n\nA month-end report ran on the primary database and held all 10 Hikari connections. Orders and checkout returned 500 after 30 s waits.\nFix: cancelled the query; moved reports to the read replica; added a 60 s statement timeout for report users.\nLesson: watch Hikari pool stats (active, waiting) and alert when waiting > 10.\n"
+ },
+ {
+  "kind": "kb",
+  "file": "kb/runbooks/bad-deploy-rollback.md",
+  "start": "",
+  "line": 1,
+  "text": "# Runbook: errors right after a deploy\n\n## Symptoms\n- A new exception type (for example NullPointerException) starts within minutes of a deploy in deploys.log.\n- 500s on the endpoints touched by the change.\n\n## Fix\n1. Roll back to the previous version (`deploy rollback shop-app`).\n2. Reproduce with the failing input, add a test, then redeploy.\n"
+ },
+ {
+  "kind": "kb",
+  "file": "kb/runbooks/brute-force-login.md",
+  "start": "",
+  "line": 1,
+  "text": "# Runbook: login brute force\n\n## Symptoms\n- Hundreds of 401 responses on POST /api/login from one IP in the Apache access log.\n- `Failed login ... N failures in a row` warnings in application.log.\n\n## Fix\n1. Block the IP in Apache (`Require not ip 203.0.113.77`) or at the firewall.\n2. Enable rate limiting on /api/login and lock accounts after repeated failures.\n"
+ },
+ {
+  "kind": "kb",
+  "file": "kb/runbooks/hikari-pool.md",
+  "start": "",
+  "line": 1,
+  "text": "# Runbook: HikariCP connection pool exhausted\n\n## Symptoms\n- `java.sql.SQLTransientConnectionException: HikariPool-1 - Connection is not available, request timed out after 30000ms` in application.log.\n- HTTP 500 with ~30 s latency on endpoints that use the database (often /api/orders).\n- Pool stats show active=10, idle=0, waiting > 0.\n\n## Likely causes\n- A long-running query (reports, missing index) holds connections.\n- Connection leak: code that does not close connections.\n\n## Fix\n1. Find and cancel the long query in PostgreSQL (`pg_stat_activity`, `pg_cancel_backend`).\n2. Raise `maximumPoolSize` only if the database can take it.\n3. Add a statement timeout for report queries; run reports on a read replica.\n"
+ },
+ {
+  "kind": "kb",
+  "file": "kb/runbooks/java-heap-oom.md",
+  "start": "",
+  "line": 1,
+  "text": "# Runbook: Java heap OutOfMemoryError\n\n## Symptoms\n- `java.lang.OutOfMemoryError: Java heap space` in catalina.out; Tomcat restarts.\n- Heap usage after GC climbing over hours (warnings in application.log).\n- Apache returns 502/503 and logs AH01102 / AH00957 while Tomcat is down.\n\n## Likely causes\n- A cache or collection without a size limit (memory leak).\n\n## Fix\n1. Restart Tomcat to recover service.\n2. Take a heap dump next time (`-XX:+HeapDumpOnOutOfMemoryError`) and find the largest objects.\n3. Put a maximum size and expiry on caches (for example Caffeine `maximumSize`).\n"
+ },
+ {
+  "kind": "kb",
+  "file": "kb/runbooks/payment-gateway-timeouts.md",
+  "start": "",
+  "line": 1,
+  "text": "# Runbook: payment gateway timeouts\n\n## Symptoms\n- `java.net.SocketTimeoutException: Read timed out` from PaymentClient.\n- /api/checkout slow (over 5 s) and 504 Gateway Timeout from Apache.\n\n## Fix\n1. Check the payment provider status page.\n2. Turn on the circuit breaker so checkout fails fast with a friendly message.\n3. Retry with exponential backoff; never retry a payment without an idempotency key.\n"
+ }
+]

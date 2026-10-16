@@ -1,0 +1,30 @@
+[Tue Oct 13 02:20:01.000 2026] [core:info] [pid 2211] [client 10.0.2.63:42146] AH00128: File does not exist: /var/www/html/favicon.ico
+[Tue Oct 13 09:58:11.000 2026] [core:info] [pid 2211] [client 10.0.7.14:44183] AH00128: File does not exist: /var/www/html/favicon.ico
+[Tue Oct 13 11:51:58.000 2026] [core:info] [pid 2211] [client 10.0.5.228:55930] AH00128: File does not exist: /var/www/html/favicon.ico
+[Tue Oct 13 14:07:12.000 2026] [core:info] [pid 2211] [client 10.0.4.97:44503] AH00128: File does not exist: /var/www/html/favicon.ico
+[Wed Oct 14 05:56:16.000 2026] [core:info] [pid 2211] [client 10.0.7.223:40657] AH00128: File does not exist: /var/www/html/favicon.ico
+[Wed Oct 14 11:02:10.000 2026] [proxy_http:error] [pid 2211] (70007)The timeout specified has expired: AH01102: error reading status line from remote server 127.0.0.1:8080
+[Wed Oct 14 11:02:15.000 2026] [proxy:error] [pid 2211] (111)Connection refused: AH00957: http: attempt to connect to 127.0.0.1:8080 (localhost) failed
+[Wed Oct 14 11:02:20.000 2026] [proxy_http:error] [pid 2211] (70007)The timeout specified has expired: AH01102: error reading status line from remote server 127.0.0.1:8080
+[Wed Oct 14 11:02:25.000 2026] [proxy:error] [pid 2211] (111)Connection refused: AH00957: http: attempt to connect to 127.0.0.1:8080 (localhost) failed
+[Wed Oct 14 11:02:30.000 2026] [proxy_http:error] [pid 2211] (70007)The timeout specified has expired: AH01102: error reading status line from remote server 127.0.0.1:8080
+[Wed Oct 14 11:02:35.000 2026] [proxy:error] [pid 2211] (111)Connection refused: AH00957: http: attempt to connect to 127.0.0.1:8080 (localhost) failed
+[Wed Oct 14 11:02:40.000 2026] [proxy_http:error] [pid 2211] (70007)The timeout specified has expired: AH01102: error reading status line from remote server 127.0.0.1:8080
+[Wed Oct 14 11:02:45.000 2026] [proxy:error] [pid 2211] (111)Connection refused: AH00957: http: attempt to connect to 127.0.0.1:8080 (localhost) failed
+[Wed Oct 14 11:02:50.000 2026] [proxy_http:error] [pid 2211] (70007)The timeout specified has expired: AH01102: error reading status line from remote server 127.0.0.1:8080
+[Wed Oct 14 11:02:55.000 2026] [proxy:error] [pid 2211] (111)Connection refused: AH00957: http: attempt to connect to 127.0.0.1:8080 (localhost) failed
+[Wed Oct 14 11:03:00.000 2026] [proxy_http:error] [pid 2211] (70007)The timeout specified has expired: AH01102: error reading status line from remote server 127.0.0.1:8080
+[Wed Oct 14 11:03:05.000 2026] [proxy:error] [pid 2211] (111)Connection refused: AH00957: http: attempt to connect to 127.0.0.1:8080 (localhost) failed
+[Wed Oct 14 11:03:10.000 2026] [proxy_http:error] [pid 2211] (70007)The timeout specified has expired: AH01102: error reading status line from remote server 127.0.0.1:8080
+[Wed Oct 14 11:03:15.000 2026] [proxy:error] [pid 2211] (111)Connection refused: AH00957: http: attempt to connect to 127.0.0.1:8080 (localhost) failed
+[Wed Oct 14 11:03:20.000 2026] [proxy_http:error] [pid 2211] (70007)The timeout specified has expired: AH01102: error reading status line from remote server 127.0.0.1:8080
+[Wed Oct 14 11:03:25.000 2026] [proxy:error] [pid 2211] (111)Connection refused: AH00957: http: attempt to connect to 127.0.0.1:8080 (localhost) failed
+[Wed Oct 14 11:03:30.000 2026] [proxy_http:error] [pid 2211] (70007)The timeout specified has expired: AH01102: error reading status line from remote server 127.0.0.1:8080
+[Wed Oct 14 11:03:35.000 2026] [proxy:error] [pid 2211] (111)Connection refused: AH00957: http: attempt to connect to 127.0.0.1:8080 (localhost) failed
+[Wed Oct 14 19:27:46.000 2026] [core:info] [pid 2211] [client 10.0.6.188:43523] AH00128: File does not exist: /var/www/html/favicon.ico
+[Wed Oct 14 21:59:36.000 2026] [core:info] [pid 2211] [client 10.0.3.178:31567] AH00128: File does not exist: /var/www/html/favicon.ico
+[Wed Oct 14 23:13:52.000 2026] [core:info] [pid 2211] [client 10.0.6.244:59251] AH00128: File does not exist: /var/www/html/favicon.ico
+[Thu Oct 15 05:32:12.000 2026] [core:info] [pid 2211] [client 10.0.3.30:56308] AH00128: File does not exist: /var/www/html/favicon.ico
+[Thu Oct 15 09:44:59.000 2026] [core:info] [pid 2211] [client 10.0.9.245:56394] AH00128: File does not exist: /var/www/html/favicon.ico
+[Thu Oct 15 16:26:11.000 2026] [core:info] [pid 2211] [client 10.0.2.63:31207] AH00128: File does not exist: /var/www/html/favicon.ico
+[Thu Oct 15 21:10:27.000 2026] [core:info] [pid 2211] [client 10.0.2.32:53512] AH00128: File does not exist: /var/www/html/favicon.ico

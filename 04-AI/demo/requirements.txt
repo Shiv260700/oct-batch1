@@ -1,0 +1,10 @@
+pandas
+numpy
+matplotlib
+torch
+transformers
+sentence-transformers
+fastapi
+uvicorn
+httpx
+jupyter
